@@ -86,7 +86,7 @@ const bulletSettings = {
   height: 25,
   speed: 18 * 60,
   cooldown: 100,
-  defaultRange: SCREEN_HEIGHT * 0.56,
+  defaultRange: SCREEN_HEIGHT * 0.65, // ★射程を65%に変更
 };
 
 // 敵の設定
@@ -317,7 +317,7 @@ class BaseEliteEnemy {
     this.height = config.height;
     this.x = config.x !== undefined ? config.x : Math.random() * (SCREEN_WIDTH - this.width);
     this.y = -this.height * 2;
-    this.speed = config.speed;
+    this.speed = config.speed * difficulty.speedMultiplier;
     this.targetY = config.targetY;
     this.hp = config.hp * difficulty.hpMultiplier;
     this.maxHp = config.maxHp * difficulty.hpMultiplier;
@@ -328,7 +328,6 @@ class BaseEliteEnemy {
     this.color = config.color;
     this.onDefeat = config.onDefeat;
   }
-  // (★修正点) 常に下に移動するように変更
   update(shotCooldown, deltaTime) {
     this.y += this.speed * deltaTime;
   }
@@ -391,8 +390,8 @@ class EliteEnemy extends BaseEliteEnemy {
   shoot() {
     const bulletX = this.x + this.width / 2;
     const bulletY = this.y + this.height / 2;
-    const speed = 6 * 60;
-    const turnSpeed = 3;
+    const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
+    const turnSpeed = this.difficulty.homingTurnSpeed;
     const damage = 20;
     const spreadAngle = (20 * Math.PI) / 180;
     const lifetime = this.difficulty.homingLifetime;
@@ -462,7 +461,7 @@ class BarrageEnemy extends BaseEliteEnemy {
   constructor(difficulty) {
     const conf = { ...BarrageEnemy.config, targetY: 50 + Math.random() * 360 };
     super(conf, difficulty);
-    this.barrageOrbs = [];
+    this.difficulty = difficulty;
   }
   update(orbCooldown, deltaTime) {
     super.update(orbCooldown, deltaTime);
@@ -487,6 +486,7 @@ class BarrageEnemy extends BaseEliteEnemy {
     const numBullets = 18;
     for (let i = 0; i < numBullets; i++) {
       const angle = (Math.PI / (numBullets - 1)) * i;
+      const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
       explosionBullets.push(
         new GenericEnemyBullet(
           x,
@@ -495,7 +495,7 @@ class BarrageEnemy extends BaseEliteEnemy {
           y + Math.sin(angle) * 100,
           15,
           15,
-          6 * 60,
+          speed,
           COLORS.YELLOW,
           10
         )
@@ -527,6 +527,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
   };
   constructor(difficulty) {
     super(EliteRedEnemy.config, difficulty);
+    this.difficulty = difficulty;
   }
   update(shotCooldown, deltaTime) {
     super.update(shotCooldown, deltaTime);
@@ -544,6 +545,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
       player.x + player.width / 2 - (this.x + this.width / 2)
     );
     const spreadAngle = (15 * Math.PI) / 180;
+    const speed = 9 * 60 * this.difficulty.bulletSpeedMultiplier;
     for (let i = -1; i <= 1; i++) {
       const angle = baseAngle + i * spreadAngle;
       const bulletX = this.x + this.width / 2;
@@ -551,7 +553,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
       const targetBulletX = bulletX + Math.cos(angle) * 100;
       const targetBulletY = bulletY + Math.sin(angle) * 100;
       this.bullets.push(
-        new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 15, 15, 9 * 60, COLORS.CRIMSON, 15)
+        new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 15, 15, speed, COLORS.CRIMSON, 15)
       );
     }
   }
@@ -799,9 +801,12 @@ function updateDifficultySettings(level) {
   let settings = {
     hpMultiplier: 1.0,
     speedMultiplier: 1.0,
+    bulletSpeedMultiplier: 1.0,
+    attackRateMultiplier: 1.0,
     wallHp: 10,
     elites: { purple: false, red: false, orange: false, green: false, blue: false },
     homingLifetime: 5000,
+    homingTurnSpeed: 3,
   };
   if (level === 1) {
     settings.hpMultiplier = 0.4;
@@ -832,10 +837,13 @@ function updateDifficultySettings(level) {
   } else {
     settings.elites = { purple: true, red: true, orange: true, green: true, blue: true };
     if (level >= 6) {
-      settings.hpMultiplier = 1.0 + (level - 5) * 0.3;
-      settings.speedMultiplier = 1.0 + (level - 5) * 0.05;
+      settings.hpMultiplier = 1.0 + (level - 5) * 0.1; // HPの上昇は緩やかに
+      settings.speedMultiplier = 1.0 + (level - 5) * 0.08; // 敵の移動速度
+      settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1; // 弾速
+      settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15; // 攻撃頻度
       settings.wallHp = 10 + (level - 5) * 2;
       settings.homingLifetime = 5000 + (level - 5) * 500;
+      settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
     }
   }
   difficultySettings = settings;
@@ -991,61 +999,70 @@ function update(deltaTime) {
     lastFreeroamSpawnTime = currentTime;
   }
 
-  const eliteCooldownMultiplier = 1 / speedMultiplier;
+  const eliteAttackRate = difficultySettings.attackRateMultiplier || 1.0;
   if (
     difficultySettings.elites.purple &&
     !currentEliteEnemy &&
-    currentTime - lastEliteEnemySpawnTime > EliteEnemy.spawnInterval * eliteCooldownMultiplier
+    currentTime - lastEliteEnemySpawnTime > EliteEnemy.spawnInterval / eliteAttackRate
   ) {
     currentEliteEnemy = new EliteEnemy(difficultySettings);
     lastEliteEnemySpawnTime = currentTime;
   }
   if (currentEliteEnemy)
-    currentEliteEnemy.update(getAdjustedValue(EliteEnemy.config.shotCooldownBase, newDifficultyLevel), deltaTime);
+    currentEliteEnemy.update(
+      getAdjustedValue(EliteEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+      deltaTime
+    );
   if (
     difficultySettings.elites.orange &&
     !currentBarrageEnemy &&
-    currentTime - lastBarrageSpawnTime > BarrageEnemy.spawnInterval * eliteCooldownMultiplier
+    currentTime - lastBarrageSpawnTime > BarrageEnemy.spawnInterval / eliteAttackRate
   ) {
     currentBarrageEnemy = new BarrageEnemy(difficultySettings);
     lastBarrageSpawnTime = currentTime;
   }
   if (currentBarrageEnemy)
-    currentBarrageEnemy.update(getAdjustedValue(BarrageEnemy.config.shotCooldownBase, newDifficultyLevel), deltaTime);
+    currentBarrageEnemy.update(
+      getAdjustedValue(BarrageEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+      deltaTime
+    );
   if (
     difficultySettings.elites.red &&
     !currentEliteRedEnemy &&
-    currentTime - lastEliteRedSpawnTime > EliteRedEnemy.spawnInterval * eliteCooldownMultiplier
+    currentTime - lastEliteRedSpawnTime > EliteRedEnemy.spawnInterval / eliteAttackRate
   ) {
     currentEliteRedEnemy = new EliteRedEnemy(difficultySettings);
     lastEliteRedSpawnTime = currentTime;
   }
   if (currentEliteRedEnemy)
-    currentEliteRedEnemy.update(getAdjustedValue(EliteRedEnemy.config.shotCooldownBase, newDifficultyLevel), deltaTime);
+    currentEliteRedEnemy.update(
+      getAdjustedValue(EliteRedEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+      deltaTime
+    );
   if (
     difficultySettings.elites.green &&
     !currentEliteGreenEnemy &&
-    currentTime - lastEliteGreenSpawnTime > EliteGreenEnemy.spawnInterval * eliteCooldownMultiplier
+    currentTime - lastEliteGreenSpawnTime > EliteGreenEnemy.spawnInterval / eliteAttackRate
   ) {
     currentEliteGreenEnemy = new EliteGreenEnemy(difficultySettings);
     lastEliteGreenSpawnTime = currentTime;
   }
   if (currentEliteGreenEnemy)
     currentEliteGreenEnemy.update(
-      getAdjustedValue(EliteGreenEnemy.config.shotCooldownBase, newDifficultyLevel),
+      getAdjustedValue(EliteGreenEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
       deltaTime
     );
   if (
     difficultySettings.elites.blue &&
     !currentEliteBlueEnemy &&
-    currentTime - lastEliteBlueSpawnTime > EliteBlueEnemy.spawnInterval * eliteCooldownMultiplier
+    currentTime - lastEliteBlueSpawnTime > EliteBlueEnemy.spawnInterval / eliteAttackRate
   ) {
     currentEliteBlueEnemy = new EliteBlueEnemy(difficultySettings);
     lastEliteBlueSpawnTime = currentTime;
   }
   if (currentEliteBlueEnemy)
     currentEliteBlueEnemy.update(
-      getAdjustedValue(EliteBlueEnemy.config.shotCooldownBase, newDifficultyLevel),
+      getAdjustedValue(EliteBlueEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
       deltaTime
     );
 
