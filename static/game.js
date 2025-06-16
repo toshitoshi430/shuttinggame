@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// 画面設定
+// --- 画面設定 ---
 const SCREEN_WIDTH = canvas.width;
 const SCREEN_HEIGHT = canvas.height;
 
@@ -15,57 +15,53 @@ const COLORS = {
   GREEN: "#00FF00",
   CYAN: "#00FFFF",
   ORANGE: "#FFA500",
-  CRIMSON: "#DC143C", // 貫通弾の色
+  CRIMSON: "#DC143C",
   LIGHT_BLUE: "#ADD8E6",
   LIME_GREEN: "#32CD32",
   DARK_GRAY: "#646464",
 };
 
 // --- グローバルゲーム状態 ---
-let score = 0;
-let gameOver = false;
-let gameStartTime = 0;
-let currentDifficultyLevel = 1;
-const DIFFICULTY_INTERVAL = 30000;
-const MAX_DIFFICULTY_LEVEL = 10;
-let lastTime = 0; // deltaTime計算用
-
-let bullets = [];
-let enemies = [];
-let freeRoamEnemies = [];
-let explosionBullets = [];
-let healthOrbs = [];
-
-let currentEliteEnemy = null;
-let currentBarrageEnemy = null;
-let currentEliteRedEnemy = null;
-let currentEliteGreenEnemy = null;
-
-let lastShotTime = 0;
-let lastEnemySpawnTime = 0;
-let lastEliteEnemySpawnTime = 0;
-let lastFreeroamSpawnTime = 0;
-let lastBarrageSpawnTime = 0;
-let lastEliteRedSpawnTime = 0;
-let lastEliteGreenSpawnTime = 0;
+let score = 0,
+  gameOver = false,
+  gameStartTime = 0,
+  currentDifficultyLevel = 1;
+const DIFFICULTY_INTERVAL = 30000,
+  MAX_DIFFICULTY_LEVEL = 10;
+let lastTime = 0,
+  deltaTime = 0;
+let bullets = [],
+  enemies = [],
+  freeRoamEnemies = [],
+  explosionBullets = [],
+  healthOrbs = [];
+let currentEliteEnemy = null,
+  currentBarrageEnemy = null,
+  currentEliteRedEnemy = null,
+  currentEliteGreenEnemy = null;
+let lastShotTime = 0,
+  lastEnemySpawnTime = 0,
+  lastEliteEnemySpawnTime = 0,
+  lastFreeroamSpawnTime = 0,
+  lastBarrageSpawnTime = 0,
+  lastEliteRedSpawnTime = 0,
+  lastEliteGreenSpawnTime = 0;
 
 // --- プレイヤー設定 ---
 const player = {
-  width: 20,
-  height: 20,
-  x: (SCREEN_WIDTH - 20) / 2,
-  y: SCREEN_HEIGHT - 20 - 30,
-  speed: 3.0 * 60,
+  width: 30,
+  height: 30,
+  x: (SCREEN_WIDTH - 30) / 2,
+  y: SCREEN_HEIGHT - 30 - 50,
   hp: 100,
   maxHp: 100,
   lastHitTime: 0,
   invincibilityDuration: 1000,
-  // バフ状態
   shotsActive: false,
   shotsStartTime: 0,
   shotsDuration: 5000,
   shields: 0,
-  shieldObjectSize: 30,
+  shieldObjectSize: 40,
   shieldOffsetAngle: 0,
   pierceActive: false,
   pierceStartTime: 0,
@@ -73,31 +69,13 @@ const player = {
 };
 
 // 弾の設定
-const bulletSettings = {
-  width: 5,
-  height: 15,
-  speed: 12 * 60,
-  cooldown: 100,
-};
+const bulletSettings = { width: 8, height: 25, speed: 18 * 60, cooldown: 100 };
 
 // 敵の設定
-const enemySettings = {
-  width: 30,
-  height: 30,
-  speedBase: 2.2 * 60,
-  spawnIntervalBase: 1000,
-  perWave: 4,
-  spacing: 40,
-};
-
-const freeroamEnemySettings = {
-  spawnIntervalBase: 2000,
-  speedBase: 3.8 * 60,
-};
+const enemySettings = { width: 40, height: 40, speedBase: 2.5 * 60, spawnIntervalBase: 1000, perWave: 5, spacing: 50 };
+const freeroamEnemySettings = { spawnIntervalBase: 2000, speedBase: 4.0 * 60 };
 
 // --- クラス定義 ---
-
-// プレイヤーが発射する拡散弾 (★修正点)
 class PlayerSpreadBullet {
   constructor(x, y, angleDeg, speed) {
     this.width = bulletSettings.width;
@@ -112,14 +90,12 @@ class PlayerSpreadBullet {
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
   }
-  // 弾の色が変わるように修正
   draw() {
     ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.WHITE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
 
-// 隊列雑魚敵
 class Enemy {
   constructor(x, y, width, height, speed, type = "straight") {
     this.x = x;
@@ -149,11 +125,10 @@ class Enemy {
   }
 }
 
-// 自由飛行雑魚敵
 class FreeRoamEnemy {
   constructor(startX, startY, speed) {
-    this.width = 25;
-    this.height = 25;
+    this.width = 35;
+    this.height = 35;
     this.x = startX;
     this.y = startY;
     this.speed = speed;
@@ -200,9 +175,9 @@ class FreeRoamEnemy {
         bulletY,
         player.x + player.width / 2,
         player.y + player.height / 2,
-        8,
-        8,
-        6 * 60,
+        12,
+        12,
+        8 * 60,
         COLORS.CYAN,
         10
       )
@@ -215,7 +190,6 @@ class FreeRoamEnemy {
   }
 }
 
-// 汎用敵弾丸クラス
 class GenericEnemyBullet {
   constructor(x, y, targetX, targetY, width, height, speed, color, damage) {
     this.x = x;
@@ -241,7 +215,43 @@ class GenericEnemyBullet {
   }
 }
 
-// 汎用エリート敵クラス
+class HomingBullet {
+  constructor(x, y, angle, speed, turnSpeed, color, damage) {
+    this.x = x;
+    this.y = y;
+    this.width = 20;
+    this.height = 20;
+    this.speed = speed;
+    this.turnSpeed = turnSpeed;
+    this.color = color;
+    this.damage = damage;
+    this.angle = angle;
+    this.spawnTime = performance.now();
+    this.lifetime = 5000;
+    this.isExpired = false;
+  }
+  update(deltaTime) {
+    if (performance.now() - this.spawnTime > this.lifetime) {
+      this.isExpired = true;
+      return;
+    }
+    const targetAngle = Math.atan2(player.y + player.height / 2 - this.y, player.x + player.width / 2 - this.x);
+    let angleDiff = targetAngle - this.angle;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    const turnAmount = this.turnSpeed * deltaTime;
+    this.angle += Math.max(-turnAmount, Math.min(turnAmount, angleDiff));
+    this.x += Math.cos(this.angle) * this.speed * deltaTime;
+    this.y += Math.sin(this.angle) * this.speed * deltaTime;
+  }
+  draw() {
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 class BaseEliteEnemy {
   constructor(config) {
     this.width = config.width;
@@ -265,8 +275,8 @@ class BaseEliteEnemy {
   draw() {
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x, this.y, this.width, this.height);
+    const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
     const hpBarWidth = this.width;
-    const hpBarHeight = 8;
     const hpRatio = this.hp / this.maxHp;
     ctx.fillStyle = COLORS.RED;
     ctx.fillRect(this.x, this.y - hpBarHeight - 3, hpBarWidth, hpBarHeight);
@@ -286,7 +296,6 @@ class BaseEliteEnemy {
   }
 }
 
-// エリート敵（紫）
 class EliteEnemy extends BaseEliteEnemy {
   static spawnInterval = 5500;
   constructor() {
@@ -298,61 +307,35 @@ class EliteEnemy extends BaseEliteEnemy {
       targetY: 100,
       hp: 120,
       maxHp: 120,
-      shotCooldownBase: 1000,
+      shotCooldownBase: 2000,
       color: COLORS.PURPLE,
       onDefeat: () => {
-        console.log("エリート敵（紫）を撃破しました！");
         player.shotsActive = true;
         player.shotsStartTime = performance.now();
-        console.log("スプレッドショット獲得！");
       },
     });
   }
   update(shotCooldown, deltaTime) {
     super.update(shotCooldown, deltaTime);
     const currentTime = performance.now();
-    if (this.y >= this.targetY && currentTime - this.lastShotTime > shotCooldown) {
+    if (currentTime - this.lastShotTime > shotCooldown) {
       this.shoot();
       this.lastShotTime = currentTime;
     }
     this.bullets.forEach((b) => b.update(deltaTime));
-    this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT && b.x > -b.width && b.x < SCREEN_WIDTH);
+    this.bullets = this.bullets.filter((b) => !b.isExpired);
   }
   shoot() {
-    const bulletY = this.y + this.height;
-    const spawnOffset = this.width / 4;
-    const playerTargetX = player.x + player.width / 2;
-    const playerTargetY = player.y + player.height / 2;
-    const bulletSpeed = 8 * 60;
-    const bulletDamage = 25;
-    const bulletX1 = this.x + spawnOffset - 15 / 2;
-    this.bullets.push(
-      new GenericEnemyBullet(
-        bulletX1,
-        bulletY,
-        playerTargetX,
-        playerTargetY,
-        15,
-        15,
-        bulletSpeed,
-        COLORS.YELLOW,
-        bulletDamage
-      )
-    );
-    const bulletX2 = this.x + this.width - spawnOffset - 15 / 2;
-    this.bullets.push(
-      new GenericEnemyBullet(
-        bulletX2,
-        bulletY,
-        playerTargetX,
-        playerTargetY,
-        15,
-        15,
-        bulletSpeed,
-        COLORS.YELLOW,
-        bulletDamage
-      )
-    );
+    const bulletX = this.x + this.width / 2;
+    const bulletY = this.y + this.height / 2;
+    const speed = 6 * 60; // 弾速をアップ
+    const turnSpeed = 3;
+    const damage = 20;
+    const spreadAngle = (20 * Math.PI) / 180;
+    for (let i = -2; i <= 2; i++) {
+      const angle = Math.PI / 2 + i * spreadAngle;
+      this.bullets.push(new HomingBullet(bulletX, bulletY, angle, speed, turnSpeed, COLORS.YELLOW, damage));
+    }
   }
   draw() {
     super.draw();
@@ -360,11 +343,10 @@ class EliteEnemy extends BaseEliteEnemy {
   }
 }
 
-// 花火弾幕のオーブ
 class BarrageOrb {
   constructor(x, y) {
-    this.width = 40;
-    this.height = 40;
+    this.width = 35;
+    this.height = 35;
     this.speed = 2 * 60;
     this.x = x;
     this.y = y;
@@ -387,8 +369,8 @@ class BarrageOrb {
   draw() {
     ctx.fillStyle = COLORS.ORANGE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
+    const hpBarHeight = Math.max(2, Math.round(this.width * 0.2));
     const hpBarWidth = this.width;
-    const hpBarHeight = 5;
     const hpRatio = this.hp / this.maxHp;
     ctx.fillStyle = COLORS.RED;
     ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth, hpBarHeight);
@@ -397,7 +379,6 @@ class BarrageOrb {
   }
 }
 
-// 花火弾幕敵（オレンジ）
 class BarrageEnemy extends BaseEliteEnemy {
   static spawnInterval = 20000;
   constructor() {
@@ -405,15 +386,13 @@ class BarrageEnemy extends BaseEliteEnemy {
       width: 70,
       height: 70,
       speed: 0.8 * 60,
-      targetY: Math.random() * (SCREEN_HEIGHT / 3) + 50,
+      targetY: 50 + Math.random() * 360,
       hp: 180,
       maxHp: 180,
       shotCooldownBase: 3000,
       color: COLORS.ORANGE,
       onDefeat: () => {
-        console.log("花火弾幕敵（オレンジ）を撃破しました！");
         player.shields = 3;
-        console.log(`シールド獲得！残り ${player.shields} 回`);
       },
     });
     this.barrageOrbs = [];
@@ -421,7 +400,7 @@ class BarrageEnemy extends BaseEliteEnemy {
   update(orbCooldown, deltaTime) {
     super.update(orbCooldown, deltaTime);
     const currentTime = performance.now();
-    if (this.y >= this.targetY && currentTime - this.lastShotTime > orbCooldown) {
+    if (currentTime - this.lastShotTime > orbCooldown) {
       this.spawnOrb();
       this.lastShotTime = currentTime;
     }
@@ -433,7 +412,7 @@ class BarrageEnemy extends BaseEliteEnemy {
     });
   }
   spawnOrb() {
-    const orbX = this.x + this.width / 2 - 40 / 2;
+    const orbX = this.x + this.width / 2 - 35 / 2;
     const orbY = this.y + this.height;
     this.barrageOrbs.push(new BarrageOrb(orbX, orbY));
   }
@@ -443,7 +422,7 @@ class BarrageEnemy extends BaseEliteEnemy {
       const angle = ((2 * Math.PI) / numBullets) * i;
       const targetX = x + Math.cos(angle) * 100;
       const targetY = y + Math.sin(angle) * 100;
-      explosionBullets.push(new GenericEnemyBullet(x, y, targetX, targetY, 8, 8, 5 * 60, COLORS.YELLOW, 8));
+      explosionBullets.push(new GenericEnemyBullet(x, y, targetX, targetY, 12, 12, 5 * 60, COLORS.YELLOW, 8));
     }
   }
   draw() {
@@ -452,7 +431,6 @@ class BarrageEnemy extends BaseEliteEnemy {
   }
 }
 
-// エリート敵（赤）
 class EliteRedEnemy extends BaseEliteEnemy {
   static spawnInterval = 12000;
   constructor() {
@@ -466,17 +444,15 @@ class EliteRedEnemy extends BaseEliteEnemy {
       shotCooldownBase: 500,
       color: COLORS.CRIMSON,
       onDefeat: () => {
-        console.log("エリート敵（赤）を撃破しました！");
         player.pierceActive = true;
         player.pierceStartTime = performance.now();
-        console.log("貫通弾獲得！");
       },
     });
   }
   update(shotCooldown, deltaTime) {
     super.update(shotCooldown, deltaTime);
     const currentTime = performance.now();
-    if (this.y >= this.targetY && currentTime - this.lastShotTime > shotCooldown) {
+    if (currentTime - this.lastShotTime > shotCooldown) {
       this.shoot();
       this.lastShotTime = currentTime;
     }
@@ -496,7 +472,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
       const targetBulletX = bulletX + Math.cos(angle) * 100;
       const targetBulletY = bulletY + Math.sin(angle) * 100;
       this.bullets.push(
-        new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 10, 10, 9 * 60, COLORS.CRIMSON, 15)
+        new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 15, 15, 9 * 60, COLORS.CRIMSON, 15)
       );
     }
   }
@@ -506,11 +482,10 @@ class EliteRedEnemy extends BaseEliteEnemy {
   }
 }
 
-// 壁弾丸
 class ObstacleBullet {
   constructor(x, y) {
-    this.width = 40;
-    this.height = 20;
+    this.width = 120;
+    this.height = 30;
     this.speed = 2 * 60;
     this.x = x;
     this.y = y;
@@ -523,8 +498,8 @@ class ObstacleBullet {
   draw() {
     ctx.fillStyle = COLORS.DARK_GRAY;
     ctx.fillRect(this.x, this.y, this.width, this.height);
+    const hpBarHeight = Math.max(1, Math.round(this.width * 0.05));
     const hpBarWidth = this.width;
-    const hpBarHeight = 4;
     const hpRatio = this.hp / this.maxHp;
     ctx.fillStyle = COLORS.RED;
     ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth, hpBarHeight);
@@ -533,7 +508,6 @@ class ObstacleBullet {
   }
 }
 
-// エリート敵（緑）
 class EliteGreenEnemy extends BaseEliteEnemy {
   static spawnInterval = 16000;
   constructor() {
@@ -547,18 +521,16 @@ class EliteGreenEnemy extends BaseEliteEnemy {
       shotCooldownBase: 2500,
       color: COLORS.LIME_GREEN,
       onDefeat: (self) => {
-        console.log("エリート敵（緑）を撃破しました！");
         const dropX = self.x + self.width / 2;
         const dropY = self.y + self.height / 2;
         healthOrbs.push(new HealthOrb(dropX, dropY));
-        console.log("回復オーブが出現！");
       },
     });
   }
   update(shotCooldown, deltaTime) {
     super.update(shotCooldown, deltaTime);
     const currentTime = performance.now();
-    if (this.y >= this.targetY && currentTime - this.lastShotTime > shotCooldown) {
+    if (currentTime - this.lastShotTime > shotCooldown) {
       this.shoot();
       this.lastShotTime = currentTime;
     }
@@ -566,8 +538,8 @@ class EliteGreenEnemy extends BaseEliteEnemy {
     this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT);
   }
   shoot() {
-    const numWalls = 3;
-    const wallSpacing = 150;
+    const numWalls = 4;
+    const wallSpacing = 200;
     const startXOffset = Math.random() * 100 - 50;
     for (let i = 0; i < numWalls; i++) {
       const bulletX = this.x + this.width / 2 + (i - Math.floor(numWalls / 2)) * wallSpacing + startXOffset;
@@ -581,7 +553,6 @@ class EliteGreenEnemy extends BaseEliteEnemy {
   }
 }
 
-// 回復オーブ
 class HealthOrb {
   constructor(x, y) {
     this.width = 25;
@@ -603,12 +574,55 @@ class HealthOrb {
 }
 
 // --- 入力ハンドラ ---
-const keys = {};
-window.addEventListener("keydown", (e) => {
-  keys[e.code] = true;
+let isInputActive = false;
+let inputX = 0;
+let inputY = 0;
+function updateInputPosition(eventX, eventY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  inputX = (eventX - rect.left) * scaleX;
+  inputY = (eventY - rect.top) * scaleY;
+}
+canvas.addEventListener("mousedown", (e) => {
+  isInputActive = true;
+  updateInputPosition(e.clientX, e.clientY);
 });
-window.addEventListener("keyup", (e) => {
-  keys[e.code] = false;
+canvas.addEventListener("mousemove", (e) => {
+  if (e.buttons === 1) {
+    isInputActive = true;
+    updateInputPosition(e.clientX, e.clientY);
+  }
+});
+window.addEventListener("mouseup", () => {
+  isInputActive = false;
+});
+canvas.addEventListener(
+  "touchstart",
+  (e) => {
+    e.preventDefault();
+    isInputActive = true;
+    updateInputPosition(e.touches[0].clientX, e.touches[0].clientY);
+  },
+  { passive: false }
+);
+canvas.addEventListener(
+  "touchmove",
+  (e) => {
+    e.preventDefault();
+    if (isInputActive) {
+      updateInputPosition(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  },
+  { passive: false }
+);
+canvas.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  isInputActive = false;
+});
+canvas.addEventListener("touchcancel", (e) => {
+  e.preventDefault();
+  isInputActive = false;
 });
 
 // --- ヘルパー関数 ---
@@ -655,52 +669,43 @@ function resetGame() {
   lastBarrageSpawnTime = 0;
   lastEliteRedSpawnTime = 0;
   lastEliteGreenSpawnTime = 0;
-  console.log("Game Restarted!");
 }
 
 // --- 更新処理 ---
 function update(deltaTime) {
   if (gameOver) {
-    if (keys["KeyR"]) resetGame();
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.code === "KeyR") resetGame();
+      },
+      { once: true }
+    );
     return;
   }
-
   const currentTime = performance.now();
   const elapsedGameTime = currentTime - gameStartTime;
   const newDifficultyLevel = Math.min(MAX_DIFFICULTY_LEVEL, 1 + Math.floor(elapsedGameTime / DIFFICULTY_INTERVAL));
   if (newDifficultyLevel !== currentDifficultyLevel) {
     currentDifficultyLevel = newDifficultyLevel;
-    console.log(`難易度レベルが ${currentDifficultyLevel} に上昇しました！`);
   }
 
-  const currentEnemySpeed = getAdjustedValue(enemySettings.speedBase, currentDifficultyLevel, 1, 1.05);
-  const currentEnemySpawnInterval = getAdjustedValue(enemySettings.spawnIntervalBase, currentDifficultyLevel);
-  const currentFreeroamEnemySpeed = getAdjustedValue(freeroamEnemySettings.speedBase, currentDifficultyLevel, 1, 1.07);
-  const currentFreeroamSpawnInterval = getAdjustedValue(
-    freeroamEnemySettings.spawnIntervalBase,
-    currentDifficultyLevel
-  );
-  const currentEliteShotCooldown = getAdjustedValue(new EliteEnemy().shotCooldownBase, currentDifficultyLevel);
-  const currentBarrageOrbCooldown = getAdjustedValue(new BarrageEnemy().shotCooldownBase, currentDifficultyLevel);
-  const currentEliteRedShotCooldown = getAdjustedValue(new EliteRedEnemy().shotCooldownBase, currentDifficultyLevel);
-  const currentEliteGreenShotCooldown = getAdjustedValue(
-    new EliteGreenEnemy().shotCooldownBase,
-    currentDifficultyLevel
-  );
+  const currentEnemySpeed = getAdjustedValue(enemySettings.speedBase, newDifficultyLevel, 1, 1.05);
+  const currentEnemySpawnInterval = getAdjustedValue(enemySettings.spawnIntervalBase, newDifficultyLevel);
+  const currentFreeroamEnemySpeed = getAdjustedValue(freeroamEnemySettings.speedBase, newDifficultyLevel, 1, 1.07);
+  const currentFreeroamSpawnInterval = getAdjustedValue(freeroamEnemySettings.spawnIntervalBase, newDifficultyLevel);
+  const currentEliteShotCooldown = getAdjustedValue(2000, newDifficultyLevel);
+  const currentBarrageOrbCooldown = getAdjustedValue(3000, newDifficultyLevel);
+  const currentEliteRedShotCooldown = getAdjustedValue(500, newDifficultyLevel);
+  const currentEliteGreenShotCooldown = getAdjustedValue(2500, newDifficultyLevel);
 
-  if (player.shotsActive && currentTime - player.shotsStartTime > player.shotsDuration) {
-    player.shotsActive = false;
-    console.log("スプレッドショット効果終了");
-  }
-  if (player.pierceActive && currentTime - player.pierceStartTime > player.pierceDuration) {
-    player.pierceActive = false;
-    console.log("貫通弾効果終了");
-  }
+  if (player.shotsActive && currentTime - player.shotsStartTime > player.shotsDuration) player.shotsActive = false;
+  if (player.pierceActive && currentTime - player.pierceStartTime > player.pierceDuration) player.pierceActive = false;
 
-  if (keys["KeyA"] || keys["ArrowLeft"]) player.x -= player.speed * deltaTime;
-  if (keys["KeyD"] || keys["ArrowRight"]) player.x += player.speed * deltaTime;
-  if (keys["KeyW"] || keys["ArrowUp"]) player.y -= player.speed * deltaTime;
-  if (keys["KeyS"] || keys["ArrowDown"]) player.y += player.speed * deltaTime;
+  if (isInputActive) {
+    player.x = inputX - player.width / 2;
+    player.y = inputY - player.height / 2;
+  }
   player.x = Math.max(0, Math.min(player.x, SCREEN_WIDTH - player.width));
   player.y = Math.max(0, Math.min(player.y, SCREEN_HEIGHT - player.height));
 
@@ -785,14 +790,10 @@ function update(deltaTime) {
   }
   if (currentEliteGreenEnemy) currentEliteGreenEnemy.update(currentEliteGreenShotCooldown, deltaTime);
 
-  // --- 衝突判定 (★修正点: 復活) ---
   const playerRect = { x: player.x, y: player.y, width: player.width, height: player.height };
-
-  // プレイヤー弾 vs 敵
   for (let i = bullets.length - 1; i >= 0; i--) {
     const bullet = bullets[i];
     let bulletRemoved = false;
-    // vs 隊列雑魚
     for (let j = enemies.length - 1; j >= 0; j--) {
       if (checkCollision(bullet, enemies[j])) {
         if (!player.pierceActive) {
@@ -805,7 +806,6 @@ function update(deltaTime) {
       }
     }
     if (bulletRemoved) continue;
-    // vs 自由飛行雑魚
     for (let j = freeRoamEnemies.length - 1; j >= 0; j--) {
       if (checkCollision(bullet, freeRoamEnemies[j])) {
         if (!player.pierceActive) {
@@ -818,7 +818,6 @@ function update(deltaTime) {
       }
     }
     if (bulletRemoved) continue;
-    // vs エリート敵
     const eliteEnemies = [currentEliteEnemy, currentBarrageEnemy, currentEliteRedEnemy, currentEliteGreenEnemy];
     for (const elite of eliteEnemies) {
       if (elite && elite.isActive && checkCollision(bullet, elite)) {
@@ -836,7 +835,6 @@ function update(deltaTime) {
       }
     }
     if (bulletRemoved) continue;
-    // vs 花火オーブ
     if (currentBarrageEnemy) {
       for (let j = currentBarrageEnemy.barrageOrbs.length - 1; j >= 0; j--) {
         const orb = currentBarrageEnemy.barrageOrbs[j];
@@ -857,7 +855,6 @@ function update(deltaTime) {
       }
     }
     if (bulletRemoved) continue;
-    // vs 壁弾丸
     if (currentEliteGreenEnemy) {
       for (let j = currentEliteGreenEnemy.bullets.length - 1; j >= 0; j--) {
         const wall = currentEliteGreenEnemy.bullets[j];
@@ -876,8 +873,6 @@ function update(deltaTime) {
       }
     }
   }
-
-  // 敵 vs プレイヤー
   if (currentTime - player.lastHitTime > player.invincibilityDuration) {
     let damageTaken = 0;
     let hitSource = null;
@@ -892,7 +887,6 @@ function update(deltaTime) {
       }
       return false;
     };
-
     let collisionFound = false;
     for (const fr_enemy of freeRoamEnemies) {
       if (checkPlayerCollision(fr_enemy.bullets, 0)) {
@@ -900,7 +894,6 @@ function update(deltaTime) {
         break;
       }
     }
-
     if (!collisionFound) {
       if (checkPlayerCollision(enemies, 20)) {
       } else if (checkPlayerCollision(freeRoamEnemies, 20)) {
@@ -931,18 +924,15 @@ function update(deltaTime) {
     if (damageTaken > 0) {
       if (player.shields > 0) {
         player.shields--;
-        console.log(`シールドがダメージを吸収！残り ${player.shields} 回`);
       } else {
         player.hp -= damageTaken;
         player.lastHitTime = currentTime;
-        console.log(`ダメージ！HP: ${player.hp} (-${damageTaken})`);
       }
     }
   }
   for (let i = healthOrbs.length - 1; i >= 0; i--) {
     if (checkCollision(playerRect, healthOrbs[i])) {
       player.hp = Math.min(player.maxHp, player.hp + healthOrbs[i].healAmount);
-      console.log(`HPが ${healthOrbs[i].healAmount} 回復しました！ 現在HP: ${player.hp}`);
       healthOrbs.splice(i, 1);
     }
   }
@@ -961,7 +951,6 @@ function update(deltaTime) {
   if (currentEliteRedEnemy && !currentEliteRedEnemy.isActive) currentEliteRedEnemy = null;
   if (currentEliteGreenEnemy && !currentEliteGreenEnemy.isActive) currentEliteGreenEnemy = null;
   if (player.hp <= 0) {
-    console.log("ゲームオーバー！");
     gameOver = true;
   }
 }
@@ -972,24 +961,22 @@ function draw() {
   ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   if (gameOver) {
     ctx.fillStyle = COLORS.WHITE;
-    ctx.font = "48px sans-serif";
+    ctx.font = `48px sans-serif`;
     ctx.textAlign = "center";
     ctx.fillText("GAME OVER", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50);
-    ctx.font = "24px sans-serif";
+    ctx.font = `24px sans-serif`;
     ctx.fillText(`Final Score: ${score}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-    ctx.font = "32px sans-serif";
+    ctx.font = `32px sans-serif`;
     ctx.fillText("Press 'R' to Restart", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
     return;
   }
-
   const currentTime = performance.now();
   if (!(currentTime - player.lastHitTime < player.invincibilityDuration && Math.floor(currentTime / 100) % 2 === 0)) {
     ctx.fillStyle = COLORS.WHITE;
     ctx.fillRect(player.x, player.y, player.width, player.height);
   }
-  // (★修正点) シールドの回転速度アップ
   if (player.shields > 0) {
-    player.shieldOffsetAngle = (player.shieldOffsetAngle + 450 * (deltaTime || 0)) % 360; // 200から速度アップ
+    player.shieldOffsetAngle = (player.shieldOffsetAngle + 450 * (deltaTime || 0)) % 360;
     const shieldCenterX = player.x + player.width / 2;
     const shieldCenterY = player.y + player.height / 2;
     for (let i = 0; i < player.shields; i++) {
@@ -998,14 +985,12 @@ function draw() {
       const shieldX = shieldCenterX + offsetDist * Math.cos(angleRad);
       const shieldY = shieldCenterY + offsetDist * Math.sin(angleRad);
       ctx.strokeStyle = COLORS.LIGHT_BLUE;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.max(1, 2);
       ctx.beginPath();
       ctx.arc(shieldX, shieldY, player.shieldObjectSize / 2, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
-
-  // (★修正点) 弾の色が変わるように修正
   bullets.forEach((b) => {
     if (b.draw) {
       b.draw();
@@ -1022,28 +1007,26 @@ function draw() {
   if (currentBarrageEnemy) currentBarrageEnemy.draw();
   if (currentEliteRedEnemy) currentEliteRedEnemy.draw();
   if (currentEliteGreenEnemy) currentEliteGreenEnemy.draw();
-
   ctx.fillStyle = COLORS.WHITE;
-  ctx.font = "24px sans-serif";
+  ctx.font = `24px sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(`Score: ${score}`, 10, 30);
   ctx.fillText(`Difficulty: ${currentDifficultyLevel}`, 10, 60);
-  const hpBarX = SCREEN_WIDTH - 160;
-  const hpBarY = 10;
   const hpBarWidth = 150;
   const hpBarHeight = 20;
+  const hpBarX = SCREEN_WIDTH - hpBarWidth - 10;
+  const hpBarY = 10;
   const hpRatio = Math.max(0, player.hp / player.maxHp);
   ctx.fillStyle = COLORS.RED;
   ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
   ctx.fillStyle = COLORS.GREEN;
   ctx.fillRect(hpBarX, hpBarY, hpBarWidth * hpRatio, hpBarHeight);
   ctx.fillStyle = COLORS.WHITE;
-  ctx.font = "16px sans-serif";
+  ctx.font = `16px sans-serif`;
   ctx.textAlign = "center";
   ctx.fillText(`${player.hp}/${player.maxHp}`, hpBarX + hpBarWidth / 2, hpBarY + 15);
-
   let buffStatusY = 90;
-  ctx.font = "18px sans-serif";
+  ctx.font = `18px sans-serif`;
   ctx.textAlign = "left";
   if (player.shotsActive) {
     const timeLeft = Math.ceil((player.shotsDuration - (currentTime - player.shotsStartTime)) / 1000);
@@ -1062,7 +1045,6 @@ function draw() {
 }
 
 // --- メインループ ---
-let deltaTime = 0;
 function gameLoop(timestamp) {
   if (!lastTime) lastTime = timestamp;
   deltaTime = (timestamp - lastTime) / 1000;
@@ -1071,12 +1053,9 @@ function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
     return;
   }
-
   update(deltaTime);
   draw();
   requestAnimationFrame(gameLoop);
 }
-
-// ゲーム開始
 resetGame();
 requestAnimationFrame(gameLoop);
