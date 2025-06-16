@@ -27,8 +27,7 @@ let score = 0,
   gameOver = false,
   gameStartTime = 0,
   currentDifficultyLevel = 1;
-const DIFFICULTY_INTERVAL = 30000,
-  MAX_DIFFICULTY_LEVEL = 10;
+const MAX_DIFFICULTY_LEVEL = 10;
 let lastTime = 0,
   deltaTime = 0;
 let bullets = [],
@@ -86,7 +85,7 @@ const bulletSettings = {
   height: 25,
   speed: 18 * 60,
   cooldown: 100,
-  defaultRange: SCREEN_HEIGHT * 0.65,
+  defaultRange: SCREEN_HEIGHT * 0.56,
 };
 
 // 敵の設定
@@ -161,6 +160,7 @@ class Enemy {
   }
 }
 
+// (★修正点) 水色ザコ敵の動作をシンプルに変更
 class FreeRoamEnemy {
   constructor(startX, startY, speed) {
     this.width = 35;
@@ -168,30 +168,18 @@ class FreeRoamEnemy {
     this.x = startX;
     this.y = startY;
     this.speed = speed;
-    this.targetX = Math.random() * (SCREEN_WIDTH - this.width);
-    this.targetY = Math.random() * (SCREEN_HEIGHT / 2);
-    this.targetTolerance = 10;
-    this.mode = Math.random() < 0.5 ? "roam" : "chase";
-    this.chaseTargetUpdateInterval = 1000;
-    this.lastChaseTargetUpdate = performance.now();
+    // 画面を横切るように移動方向を設定
+    this.vx = startX < SCREEN_WIDTH / 2 ? this.speed * 0.5 : -this.speed * 0.5;
+    this.vy = this.speed * 0.3; // 少しだけ下に向かう
     this.bullets = [];
     this.hasShot = false;
-    this.shotDelay = 1000 + Math.random() * 1000;
+    this.shotDelay = 500 + Math.random() * 500; // 0.5〜1秒後
     this.spawnTime = performance.now();
   }
   update(deltaTime) {
-    const dx = this.targetX - this.x;
-    const dy = this.targetY - this.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < this.targetTolerance && this.mode === "roam") {
-      this.targetX = Math.random() * (SCREEN_WIDTH - this.width);
-      this.targetY = Math.random() * (SCREEN_HEIGHT / 2);
-    }
-    if (dist > 0) {
-      const move = this.speed * deltaTime;
-      this.x += (dx / dist) * move;
-      this.y += (dy / dist) * move;
-    }
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+
     const currentTime = performance.now();
     if (!this.hasShot && currentTime - this.spawnTime > this.shotDelay) {
       this.shoot();
@@ -453,7 +441,7 @@ class BarrageEnemy extends BaseEliteEnemy {
     onDefeat: (self) => {
       const dropX = self.x + self.width / 2;
       const dropY = self.y + self.height / 2;
-      healthOrbs.push(new HealthOrb(dropX, dropY, 40));
+      healthOrbs.push(new HealthOrb(dropX, dropY, 100));
     },
   };
   constructor(difficulty) {
@@ -840,7 +828,7 @@ function updateDifficultySettings(level) {
       settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1;
       settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15;
       settings.wallHp = 10 + (level - 5) * 2;
-      settings.homingLifetime = 5000 + (level - 5) * 500;
+      settings.homingLifetime = 3000 + (level - 5) * 5;
       settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
     }
   }
@@ -912,8 +900,8 @@ function update(deltaTime) {
     return;
   }
   const currentTime = performance.now();
-  const elapsedGameTime = currentTime - gameStartTime;
-  const newDifficultyLevel = Math.min(MAX_DIFFICULTY_LEVEL, 1 + Math.floor(elapsedGameTime / DIFFICULTY_INTERVAL));
+
+  const newDifficultyLevel = Math.min(MAX_DIFFICULTY_LEVEL, 1 + Math.floor(score / 2000));
 
   if (newDifficultyLevel !== currentDifficultyLevel) {
     currentDifficultyLevel = newDifficultyLevel;
@@ -1393,7 +1381,7 @@ function draw() {
   const hpBarX = 20;
   const hpBarY = 140;
   const hpBarWidth = 30;
-  const hpBarHeight = SCREEN_HEIGHT - 200; // 少し短く
+  const hpBarHeight = SCREEN_HEIGHT - 200;
   ctx.fillStyle = "rgba(100,0,0,0.5)";
   ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
   const hpRatio = player.hp > 0 ? player.hp / player.maxHp : 0;
@@ -1445,16 +1433,16 @@ function draw() {
     }
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+    ctx.arc(buffIconX, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
     ctx.fill();
 
     if (type !== "shield") {
       const remainingPercent = value;
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.beginPath();
-      ctx.moveTo(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2);
+      ctx.moveTo(buffIconX, buffIconY + buffIconSize / 2);
       ctx.arc(
-        buffIconX + buffIconSize / 2,
+        buffIconX,
         buffIconY + buffIconSize / 2,
         buffIconSize / 2,
         -Math.PI / 2,
@@ -1467,7 +1455,7 @@ function draw() {
 
     ctx.strokeStyle = COLORS.WHITE;
     ctx.beginPath();
-    ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+    ctx.arc(buffIconX, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
     ctx.stroke();
 
     if (text) {
@@ -1475,7 +1463,7 @@ function draw() {
       ctx.font = "bold 24px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(text, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
+      ctx.fillText(text, buffIconX, buffIconY + buffIconSize / 2 + 2);
     }
 
     buffIconY += buffIconSize + 10;
