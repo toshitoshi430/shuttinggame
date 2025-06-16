@@ -86,7 +86,7 @@ const bulletSettings = {
   height: 25,
   speed: 18 * 60,
   cooldown: 100,
-  defaultRange: SCREEN_HEIGHT * 0.65, // ★射程を65%に変更
+  defaultRange: SCREEN_HEIGHT * 0.65,
 };
 
 // 敵の設定
@@ -318,7 +318,6 @@ class BaseEliteEnemy {
     this.x = config.x !== undefined ? config.x : Math.random() * (SCREEN_WIDTH - this.width);
     this.y = -this.height * 2;
     this.speed = config.speed * difficulty.speedMultiplier;
-    this.targetY = config.targetY;
     this.hp = config.hp * difficulty.hpMultiplier;
     this.maxHp = config.maxHp * difficulty.hpMultiplier;
     this.isActive = true;
@@ -362,7 +361,6 @@ class EliteEnemy extends BaseEliteEnemy {
     height: 60,
     x: (SCREEN_WIDTH - 60) / 2,
     speed: 1.2 * 60,
-    targetY: 100,
     hp: 120,
     maxHp: 120,
     shotCooldownBase: 2000,
@@ -837,10 +835,10 @@ function updateDifficultySettings(level) {
   } else {
     settings.elites = { purple: true, red: true, orange: true, green: true, blue: true };
     if (level >= 6) {
-      settings.hpMultiplier = 1.0 + (level - 5) * 0.1; // HPの上昇は緩やかに
-      settings.speedMultiplier = 1.0 + (level - 5) * 0.08; // 敵の移動速度
-      settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1; // 弾速
-      settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15; // 攻撃頻度
+      settings.hpMultiplier = 1.0 + (level - 5) * 0.1;
+      settings.speedMultiplier = 1.0 + (level - 5) * 0.08;
+      settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1;
+      settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15;
       settings.wallHp = 10 + (level - 5) * 2;
       settings.homingLifetime = 5000 + (level - 5) * 500;
       settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
@@ -1174,18 +1172,36 @@ function update(deltaTime) {
   }
 
   activeBeams.forEach((beam) => {
-    const damage = beam.damage * deltaTime * 60;
-    [...enemies, ...freeRoamEnemies, ...eliteEnemies].forEach((enemy) => {
-      if (enemy && enemy.isActive && checkCollision(beam, enemy)) {
-        if (enemy.takeDamage(damage)) {
-          if (enemy === currentEliteEnemy) currentEliteEnemy = null;
-          if (enemy === currentBarrageEnemy) currentBarrageEnemy = null;
-          if (enemy === currentEliteRedEnemy) currentEliteRedEnemy = null;
-          if (enemy === currentEliteGreenEnemy) currentEliteGreenEnemy = null;
-          if (enemy === currentEliteBlueEnemy) currentEliteBlueEnemy = null;
+    const damage = beam.damage;
+    const allTargets = [
+      ...enemies,
+      ...freeRoamEnemies,
+      ...eliteEnemies.filter((e) => e),
+      ...(currentEliteEnemy ? currentEliteEnemy.bullets : []),
+      ...(currentEliteGreenEnemy ? currentEliteGreenEnemy.bullets : []),
+    ];
+    for (let i = allTargets.length - 1; i >= 0; i--) {
+      const target = allTargets[i];
+      if (target && (target.isActive === undefined || target.isActive) && checkCollision(beam, target)) {
+        if (target.takeDamage) {
+          target.takeDamage(damage);
+        } else {
+          if (target instanceof Enemy || target instanceof FreeRoamEnemy) {
+            allTargets.splice(i, 1);
+            score += target instanceof Enemy ? 10 : 15;
+          } else if (target instanceof HomingBullet) {
+            currentEliteEnemy.bullets = currentEliteEnemy.bullets.filter((b) => b !== target);
+            score += 1;
+          } else if (target instanceof ObstacleBullet) {
+            target.hp -= damage;
+            if (target.hp <= 0) {
+              healthOrbs.push(new HealthOrb(target.x + target.width / 2, target.y + target.height / 2, 10, 15));
+              currentEliteGreenEnemy.bullets = currentEliteGreenEnemy.bullets.filter((w) => w !== target);
+            }
+          }
         }
       }
-    });
+    }
   });
 
   if (currentTime - player.lastHitTime > player.invincibilityDuration) {
@@ -1373,46 +1389,120 @@ function draw() {
     }
   }
 
+  // HP Bar
+  const hpBarX = 20;
+  const hpBarY = 140;
+  const hpBarWidth = 30;
+  const hpBarHeight = SCREEN_HEIGHT - 200; // 少し短く
+  ctx.fillStyle = "rgba(100,0,0,0.5)";
+  ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
+  const hpRatio = player.hp > 0 ? player.hp / player.maxHp : 0;
+  if (player.hp > player.maxHp) {
+    const overHealRatio = (player.hp - player.maxHp) / player.maxHp;
+    ctx.fillStyle = "rgba(0,150,255,0.8)";
+    ctx.fillRect(
+      hpBarX,
+      hpBarY + hpBarHeight * (1 - Math.min(1, overHealRatio)),
+      hpBarWidth,
+      hpBarHeight * Math.min(1, overHealRatio)
+    );
+  }
+  ctx.fillStyle = "rgba(0,255,0,0.8)";
+  ctx.fillRect(
+    hpBarX,
+    hpBarY + hpBarHeight * (1 - Math.min(1, hpRatio)),
+    hpBarWidth,
+    hpBarHeight * Math.min(1, hpRatio)
+  );
+  ctx.strokeStyle = "#FFF";
+  ctx.strokeRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
+  ctx.fillStyle = COLORS.WHITE;
+  ctx.font = `20px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillText(`${Math.round(player.hp)}`, hpBarX + hpBarWidth / 2, hpBarY - 15);
+
+  // Buff Icons
+  const buffIconSize = 40;
+  let buffIconX = SCREEN_WIDTH - buffIconSize - 20;
+  let buffIconY = 20;
+  const drawBuffIcon = (type, value) => {
+    let color = COLORS.WHITE;
+    let text = "";
+    switch (type) {
+      case "spread":
+        color = COLORS.PURPLE;
+        break;
+      case "pierce":
+        color = COLORS.CRIMSON;
+        break;
+      case "range":
+        color = COLORS.BLUE;
+        break;
+      case "shield":
+        color = COLORS.LIGHT_BLUE;
+        text = value;
+        break;
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+    ctx.fill();
+
+    if (type !== "shield") {
+      const remainingPercent = value;
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.beginPath();
+      ctx.moveTo(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2);
+      ctx.arc(
+        buffIconX + buffIconSize / 2,
+        buffIconY + buffIconSize / 2,
+        buffIconSize / 2,
+        -Math.PI / 2,
+        -Math.PI / 2 + 2 * Math.PI * (1 - remainingPercent),
+        false
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = COLORS.WHITE;
+    ctx.beginPath();
+    ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    if (text) {
+      ctx.fillStyle = COLORS.WHITE;
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
+    }
+
+    buffIconY += buffIconSize + 10;
+  };
+
+  if (player.shotsActive) {
+    const remaining = 1 - (currentTime - player.shotsStartTime) / player.shotsDuration;
+    drawBuffIcon("spread", remaining);
+  }
+  if (player.shields > 0) {
+    drawBuffIcon("shield", player.shields);
+  }
+  if (player.pierceActive) {
+    const remaining = 1 - (currentTime - player.pierceStartTime) / player.pierceDuration;
+    drawBuffIcon("pierce", remaining);
+  }
+  if (player.rangeActive) {
+    const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
+    drawBuffIcon("range", remaining);
+  }
+
+  // Score and Difficulty
   ctx.fillStyle = COLORS.WHITE;
   ctx.font = `24px sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText(`Score: ${score}`, 10, 30);
-  ctx.fillText(`Difficulty: ${currentDifficultyLevel}`, 10, 60);
-  const hpBarWidth = 150;
-  const hpBarHeight = 20;
-  const hpBarX = SCREEN_WIDTH - hpBarWidth - 10;
-  const hpBarY = 10;
-  const hpRatio = player.hp > 0 ? player.hp / player.maxHp : 0;
-  ctx.fillStyle = hpRatio > 1 ? COLORS.BLUE : COLORS.RED;
-  ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
-  ctx.fillStyle = COLORS.GREEN;
-  ctx.fillRect(hpBarX, hpBarY, hpBarWidth * Math.min(1, hpRatio), hpBarHeight);
-  ctx.fillStyle = COLORS.WHITE;
-  ctx.font = `16px sans-serif`;
-  ctx.textAlign = "center";
-  ctx.fillText(`${Math.round(player.hp)}/${player.maxHp}`, hpBarX + hpBarWidth / 2, hpBarY + 15);
-  let buffStatusY = 90;
-  ctx.font = `18px sans-serif`;
-  ctx.textAlign = "left";
-  if (player.shotsActive) {
-    const timeLeft = Math.ceil((player.shotsDuration - (currentTime - player.shotsStartTime)) / 1000);
-    ctx.fillText(`Spread Shot: ${timeLeft}s`, 10, buffStatusY);
-    buffStatusY += 25;
-  }
-  if (player.shields > 0) {
-    ctx.fillText(`Shields: ${player.shields} hits`, 10, buffStatusY);
-    buffStatusY += 25;
-  }
-  if (player.pierceActive) {
-    const timeLeft = Math.ceil((player.pierceDuration - (currentTime - player.pierceStartTime)) / 1000);
-    ctx.fillText(`Pierce Shot: ${timeLeft}s`, 10, buffStatusY);
-    buffStatusY += 25;
-  }
-  if (player.rangeActive) {
-    const timeLeft = Math.ceil((player.rangeDuration - (currentTime - player.rangeStartTime)) / 1000);
-    ctx.fillText(`Infinite Range: ${timeLeft}s`, 10, buffStatusY);
-    buffStatusY += 25;
-  }
+  ctx.fillText(`Score: ${score}`, 20, 40);
+  ctx.fillText(`Difficulty: ${currentDifficultyLevel}`, 20, 70);
 }
 
 // --- メインループ ---
