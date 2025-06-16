@@ -1,39 +1,39 @@
 <!DOCTYPE html>
 <html lang="ja">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>マイスペースシューター</title>
-		<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-		<style>
-			/* オプション: ここに直接CSSを追加することもできます */
-			body {
-				font-family: "Arial", sans-serif;
-				background-color: #1a1a2e; /* ダークな背景色 */
-				color: #e0e0e0; /* 明るいテキスト色 */
-				display: flex;
-				flex-direction: column;
-				align-items: center;
-				justify-content: center;
-				min-height: 100vh; /* ビューポートの高さに合わせて中央揃え */
-				margin: 0;
-				overflow: hidden; /* スクロールバーを非表示 */
-			}
-			h1 {
-				color: #ffe066; /* 目立つタイトル色 */
-				margin-bottom: 20px;
-			}
-			canvas {
-				border: 2px solid #00f0ff; /* キャンバスに境界線を追加 */
-				background-color: #000000; /* キャンバスの背景を黒に */
-				display: block; /* 余分なスペースを削除 */
-				box-shadow: 0 0 15px rgba(0, 240, 255, 0.6); /* 光る効果 */
-			}
-		</style>
-	</head>
-	<body>
-		<h1>宇宙シューターゲーム</h1>
-		<canvas id="gameCanvas" width="800" height="600"></canvas>
-		<script src="{{ url_for('static', filename='game.js') }}"></script>
-	</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>マイスペースシューター</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <style>
+      /* オプション: ここに直接CSSを追加することもできます */
+      body {
+        font-family: "Arial", sans-serif;
+        background-color: #1a1a2e; /* ダークな背景色 */
+        color: #e0e0e0; /* 明るいテキスト色 */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh; /* ビューポートの高さに合わせて中央揃え */
+        margin: 0;
+        overflow: hidden; /* スクロールバーを非表示 */
+      }
+      h1 {
+        color: #ffe066; /* 目立つタイトル色 */
+        margin-bottom: 20px;
+      }
+      canvas {
+        border: 2px solid #00f0ff; /* キャンバスに境界線を追加 */
+        background-color: #000000; /* キャンバスの背景を黒に */
+        display: block; /* 余分なスペースを削除 */
+        box-shadow: 0 0 15px rgba(0, 240, 255, 0.6); /* 光る効果 */
+      }
+    </style>
+  </head>
+  <body>
+    <h1>アギャパー</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script src="{{ url_for('static', filename='game.js') }}"></script>
+  </body>
 </html>
