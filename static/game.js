@@ -61,8 +61,8 @@ const player = {
   height: 30,
   x: (SCREEN_WIDTH - 30) / 2,
   y: SCREEN_HEIGHT - 30 - 50,
-  hp: 200, // 【変更】HPを200に
-  maxHp: 200, // 【変更】最大HPを200に
+  hp: 200,
+  maxHp: 200,
   lastHitTime: 0,
   invincibilityDuration: 1000,
   shotsActive: false,
@@ -71,9 +71,9 @@ const player = {
   shields: 0,
   shieldObjectSize: 40,
   shieldOffsetAngle: 0,
-  pierceActive: false,
-  pierceStartTime: 0,
-  pierceDuration: 7000,
+  rateUpActive: false,
+  rateUpStartTime: 0,
+  rateUpDuration: 7000,
   rangeActive: false,
   rangeStartTime: 0,
   rangeDuration: 8000,
@@ -105,13 +105,13 @@ class PlayerBullet {
     this.spawnY = y;
     this.width = bulletSettings.width;
     this.height = bulletSettings.height;
-    this.pierceCount = player.pierceActive ? 1 : 0;
   }
   update(deltaTime) {
     this.y -= bulletSettings.speed * deltaTime;
   }
   draw() {
-    ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.WHITE;
+    // 【変更】赤バフ中は弾の色を赤に
+    ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.WHITE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
@@ -126,14 +126,14 @@ class PlayerSpreadBullet {
     const angleRad = ((angleDeg - 90) * Math.PI) / 180;
     this.vx = speed * Math.cos(angleRad);
     this.vy = speed * Math.sin(angleRad);
-    this.pierceCount = player.pierceActive ? 1 : 0;
   }
   update(deltaTime) {
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
   }
   draw() {
-    ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.WHITE;
+    // 【変更】赤バフ中は弾の色を赤に
+    ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.WHITE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
@@ -177,7 +177,8 @@ class PlayerHomingBullet {
   }
 
   draw() {
-    ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.YELLOW;
+    // 【変更】赤バフ中は弾の色を赤に
+    ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.YELLOW;
 
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -379,7 +380,6 @@ class Beam {
   }
 }
 
-// 【変更】青エリートのビームクラスを全面的に書き換え
 class EnemyLaser {
   constructor(sourceElite, targetX, targetY) {
     this.source = { x: sourceElite.x + sourceElite.width / 2, y: sourceElite.y + sourceElite.height / 2 };
@@ -403,7 +403,6 @@ class EnemyLaser {
     }
   }
 
-  // このビーム専用の当たり判定
   checkCollisionWithPlayer(playerRect) {
     if (performance.now() < this.beamFireTime) {
       return false;
@@ -412,12 +411,10 @@ class EnemyLaser {
     const playerCenterX = playerRect.x + playerRect.width / 2;
     const playerCenterY = playerRect.y + playerRect.height / 2;
 
-    // プレイヤーの中心からビームの直線までの距離を計算
     const dx = this.source.x - playerCenterX;
     const dy = this.source.y - playerCenterY;
     const dist = Math.abs(dx * Math.sin(this.angle) - dy * Math.cos(this.angle));
 
-    // ビームの太さとプレイヤーの大きさで判定
     return dist < this.thickness / 2 + playerRect.width / 2;
   }
 
@@ -540,7 +537,6 @@ class EliteEnemy extends BaseEliteEnemy {
   }
 }
 
-// 【変更】BarrageOrbが角度を持って飛ぶように
 class BarrageOrb {
   constructor(x, y, angle) {
     this.width = 35;
@@ -559,7 +555,6 @@ class BarrageOrb {
   update(deltaTime) {
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
-    // 画面外に出るか時間経過で爆発
     if (
       this.y > SCREEN_HEIGHT + this.height ||
       this.y < -this.height ||
@@ -631,7 +626,6 @@ class BarrageEnemy extends BaseEliteEnemy {
       }
     });
   }
-  // 【変更】オーブを前方180度に発射
   spawnOrb() {
     const orbX = this.x + this.width / 2 - 35 / 2;
     const orbY = this.y + this.height;
@@ -678,7 +672,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
     onDefeat: (self) => {
       const dropX = self.x + self.width / 2;
       const dropY = self.y + self.height / 2;
-      buffOrbs.push(new BuffOrb(dropX, dropY, "pierce"));
+      buffOrbs.push(new BuffOrb(dropX, dropY, "rateUp"));
     },
   };
   constructor(difficulty) {
@@ -885,7 +879,7 @@ class BuffOrb {
       case "spread":
         this.color = COLORS.PURPLE;
         break;
-      case "pierce":
+      case "rateUp":
         this.color = COLORS.CRIMSON;
         break;
       case "shield":
@@ -895,7 +889,7 @@ class BuffOrb {
         this.color = COLORS.BLUE;
         break;
       case "homing":
-        this.color = COLORS.YELLOW;
+        this.color = COLORS.PURPLE;
         break;
     }
   }
@@ -1059,12 +1053,12 @@ function resetGame() {
   currentDifficultyLevel = 1;
   lastTime = 0;
   updateDifficultySettings(1);
-  player.hp = player.maxHp; // player.maxHpが200になっているのでHPも200で開始
+  player.hp = player.maxHp;
   player.x = (SCREEN_WIDTH - player.width) / 2;
   player.y = SCREEN_HEIGHT - player.height - 30;
   player.shotsActive = false;
   player.shields = 0;
-  player.pierceActive = false;
+  player.rateUpActive = false;
   player.rangeActive = false;
   player.homingActive = false;
   player.beamCharges = 0;
@@ -1121,8 +1115,12 @@ function update(deltaTime) {
   if (player.hp > player.maxHp) {
     player.hp -= 20 * deltaTime;
   }
+  if (player.homingActive) {
+    player.shieldOffsetAngle = (player.shieldOffsetAngle + 250 * (deltaTime || 0)) % 360;
+  }
+
   if (player.shotsActive && currentTime - player.shotsStartTime > player.shotsDuration) player.shotsActive = false;
-  if (player.pierceActive && currentTime - player.pierceStartTime > player.pierceDuration) player.pierceActive = false;
+  if (player.rateUpActive && currentTime - player.rateUpStartTime > player.rateUpDuration) player.rateUpActive = false;
   if (player.rangeActive && currentTime - player.rangeStartTime > player.rangeDuration) player.rangeActive = false;
   if (player.homingActive && currentTime - player.homingStartTime > player.homingDuration) player.homingActive = false;
 
@@ -1141,7 +1139,8 @@ function update(deltaTime) {
   player.x = Math.max(0, Math.min(player.x, SCREEN_WIDTH - player.width));
   player.y = Math.max(0, Math.min(player.y, SCREEN_HEIGHT - player.height));
 
-  if (currentTime - lastShotTime > bulletSettings.cooldown) {
+  const cooldown = player.rateUpActive ? bulletSettings.cooldown / 2 : bulletSettings.cooldown;
+  if (currentTime - lastShotTime > cooldown) {
     const bulletXCenter = player.x + player.width / 2;
     const bulletYBase = player.y;
     if (player.shotsActive) {
@@ -1152,7 +1151,7 @@ function update(deltaTime) {
     lastShotTime = currentTime;
   }
 
-  const homingCooldown = player.pierceActive ? 400 : 800;
+  const homingCooldown = player.rateUpActive ? 400 : 800;
   if (player.homingActive && currentTime - lastHomingShotTime > homingCooldown) {
     const allElites = [
       currentEliteEnemy,
@@ -1174,7 +1173,13 @@ function update(deltaTime) {
         }
       });
       if (closestElite) {
-        playerHomingBullets.push(new PlayerHomingBullet(player.x + player.width / 2, player.y, closestElite));
+        const centerX = player.x + player.width / 2;
+        const centerY = player.y + player.height / 2;
+        const angleRad = (player.shieldOffsetAngle * Math.PI) / 180;
+        const dist = player.width / 2 + 20;
+        const spawnX = centerX + dist * Math.cos(angleRad);
+        const spawnY = centerY + dist * Math.sin(angleRad);
+        playerHomingBullets.push(new PlayerHomingBullet(spawnX, spawnY, closestElite));
         lastHomingShotTime = currentTime;
       }
     }
@@ -1297,13 +1302,9 @@ function update(deltaTime) {
       if (checkCollision(bullet, enemies[j])) {
         enemies.splice(j, 1);
         score += 10;
-        if (bullet.pierceCount > 0) {
-          bullet.pierceCount--;
-        } else {
-          bullets.splice(i, 1);
-          bulletRemoved = true;
-          break;
-        }
+        bullets.splice(i, 1);
+        bulletRemoved = true;
+        break;
       }
     }
     if (bulletRemoved) continue;
@@ -1312,13 +1313,9 @@ function update(deltaTime) {
       if (checkCollision(bullet, freeRoamEnemies[j])) {
         freeRoamEnemies.splice(j, 1);
         score += 15;
-        if (bullet.pierceCount > 0) {
-          bullet.pierceCount--;
-        } else {
-          bullets.splice(i, 1);
-          bulletRemoved = true;
-          break;
-        }
+        bullets.splice(i, 1);
+        bulletRemoved = true;
+        break;
       }
     }
     if (bulletRemoved) continue;
@@ -1326,13 +1323,9 @@ function update(deltaTime) {
     for (const elite of eliteEnemies) {
       if (elite && elite.isActive && checkCollision(bullet, elite)) {
         elite.takeDamage(10);
-        if (bullet.pierceCount > 0) {
-          bullet.pierceCount--;
-        } else {
-          bullets.splice(i, 1);
-          bulletRemoved = true;
-          break;
-        }
+        bullets.splice(i, 1);
+        bulletRemoved = true;
+        break;
       }
     }
     if (bulletRemoved) continue;
@@ -1342,13 +1335,9 @@ function update(deltaTime) {
         if (checkCollision(bullet, currentEliteEnemy.bullets[k])) {
           currentEliteEnemy.bullets.splice(k, 1);
           score += 1;
-          if (bullet.pierceCount > 0) {
-            bullet.pierceCount--;
-          } else {
-            bullets.splice(i, 1);
-            bulletRemoved = true;
-            break;
-          }
+          bullets.splice(i, 1);
+          bulletRemoved = true;
+          break;
         }
       }
     }
@@ -1363,13 +1352,9 @@ function update(deltaTime) {
             currentBarrageEnemy.barrageOrbs.splice(j, 1);
             score += 20;
           }
-          if (bullet.pierceCount > 0) {
-            bullet.pierceCount--;
-          } else {
-            bullets.splice(i, 1);
-            bulletRemoved = true;
-            break;
-          }
+          bullets.splice(i, 1);
+          bulletRemoved = true;
+          break;
         }
       }
     }
@@ -1383,13 +1368,9 @@ function update(deltaTime) {
             healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 15));
             currentEliteGreenEnemy.bullets.splice(j, 1);
           }
-          if (bullet.pierceCount > 0) {
-            bullet.pierceCount--;
-          } else {
-            bullets.splice(i, 1);
-            bulletRemoved = true;
-            break;
-          }
+          bullets.splice(i, 1);
+          bulletRemoved = true;
+          break;
         }
       }
     }
@@ -1441,7 +1422,6 @@ function update(deltaTime) {
       }
       return false;
     };
-    // 【変更】青エリートのビーム専用の当たり判定
     if (currentEliteBlueEnemy) {
       for (const laser of currentEliteBlueEnemy.activeLasers) {
         if (laser.checkCollisionWithPlayer(playerRect)) {
@@ -1509,9 +1489,9 @@ function update(deltaTime) {
           player.shotsActive = true;
           player.shotsStartTime = currentTime;
           break;
-        case "pierce":
-          player.pierceActive = true;
-          player.pierceStartTime = currentTime;
+        case "rateUp":
+          player.rateUpActive = true;
+          player.rateUpStartTime = currentTime;
           break;
         case "shield":
           player.shields = 3;
@@ -1574,27 +1554,20 @@ function draw() {
   }
 
   if (player.homingActive) {
-    player.shieldOffsetAngle = (player.shieldOffsetAngle + 250 * (deltaTime || 0)) % 360;
     const centerX = player.x + player.width / 2;
     const centerY = player.y + player.height / 2;
-    for (let i = 0; i < 3; i++) {
-      const angleRad = ((player.shieldOffsetAngle + i * 120) * Math.PI) / 180;
-      const dist = player.width / 2 + 15;
-      const pX = centerX + dist * Math.cos(angleRad);
-      const pY = centerY + dist * Math.sin(angleRad);
+    const angleRad = (player.shieldOffsetAngle * Math.PI) / 180;
+    const dist = player.width / 2 + 20;
+    const pX = centerX + dist * Math.cos(angleRad);
+    const pY = centerY + dist * Math.sin(angleRad);
+    const squareSize = 20;
 
-      ctx.fillStyle = COLORS.YELLOW;
-      ctx.save();
-      ctx.translate(pX, pY);
-      ctx.rotate(angleRad + Math.PI / 2);
-      ctx.beginPath();
-      ctx.moveTo(0, -7);
-      ctx.lineTo(-6, 4);
-      ctx.lineTo(6, 4);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
+    ctx.fillStyle = COLORS.PURPLE;
+    ctx.save();
+    ctx.translate(pX, pY);
+    ctx.rotate(angleRad + Math.PI / 4);
+    ctx.fillRect(-squareSize / 2, -squareSize / 2, squareSize, squareSize);
+    ctx.restore();
   }
 
   if (player.shields > 0) {
@@ -1657,7 +1630,7 @@ function draw() {
     } else {
       difficultyUpAnimation.active = false;
     }
-  } // HP Bar
+  }
 
   const hpBarX = 20;
   const hpBarY = 140;
@@ -1688,7 +1661,7 @@ function draw() {
   ctx.fillStyle = COLORS.WHITE;
   ctx.font = `20px sans-serif`;
   ctx.textAlign = "center";
-  ctx.fillText(`${Math.round(player.hp)}`, hpBarX + hpBarWidth / 2, hpBarY - 15); // Buff Icons
+  ctx.fillText(`${Math.round(player.hp)}`, hpBarX + hpBarWidth / 2, hpBarY - 15);
 
   const buffIconSize = 40;
   let buffIconY = 20;
@@ -1700,7 +1673,7 @@ function draw() {
       case "spread":
         color = COLORS.PURPLE;
         break;
-      case "pierce":
+      case "rateUp":
         color = COLORS.CRIMSON;
         break;
       case "range":
@@ -1711,7 +1684,7 @@ function draw() {
         text = value;
         break;
       case "homing":
-        color = COLORS.YELLOW;
+        color = COLORS.PURPLE;
         break;
     }
     ctx.fillStyle = color;
@@ -1759,9 +1732,9 @@ function draw() {
   if (player.shields > 0) {
     drawBuffIcon("shield", player.shields);
   }
-  if (player.pierceActive) {
-    const remaining = 1 - (currentTime - player.pierceStartTime) / player.pierceDuration;
-    drawBuffIcon("pierce", remaining);
+  if (player.rateUpActive) {
+    const remaining = 1 - (currentTime - player.rateUpStartTime) / player.rateUpDuration;
+    drawBuffIcon("rateUp", remaining);
   }
   if (player.rangeActive) {
     const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
@@ -1770,7 +1743,7 @@ function draw() {
   if (player.homingActive) {
     const remaining = 1 - (currentTime - player.homingStartTime) / player.homingDuration;
     drawBuffIcon("homing", remaining);
-  } // Score and Difficulty
+  }
 
   ctx.fillStyle = COLORS.WHITE;
   ctx.font = `24px sans-serif`;
