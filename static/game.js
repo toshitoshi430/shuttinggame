@@ -110,7 +110,6 @@ class PlayerBullet {
     this.y -= bulletSettings.speed * deltaTime;
   }
   draw() {
-    // 【変更】赤バフ中は弾の色を赤に
     ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.WHITE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
@@ -132,7 +131,6 @@ class PlayerSpreadBullet {
     this.y += this.vy * deltaTime;
   }
   draw() {
-    // 【変更】赤バフ中は弾の色を赤に
     ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.WHITE;
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
@@ -142,8 +140,8 @@ class PlayerHomingBullet {
   constructor(x, y, target) {
     this.x = x;
     this.y = y;
-    this.width = 8;
-    this.height = 16;
+    this.width = 12;
+    this.height = 24;
     this.speed = 10 * 60;
     this.turnSpeed = 5;
     this.target = target;
@@ -177,7 +175,6 @@ class PlayerHomingBullet {
   }
 
   draw() {
-    // 【変更】赤バフ中は弾の色を赤に
     ctx.fillStyle = player.rateUpActive ? COLORS.CRIMSON : COLORS.YELLOW;
 
     ctx.save();
@@ -635,7 +632,8 @@ class BarrageEnemy extends BaseEliteEnemy {
   generateExplosionBullets(x, y) {
     const numBullets = 18;
     for (let i = 0; i < numBullets; i++) {
-      const angle = (Math.PI / (numBullets - 1)) * i;
+      // 【変更】爆発を360度に変更
+      const angle = ((2 * Math.PI) / numBullets) * i;
       const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
       explosionBullets.push(
         new GenericEnemyBullet(
@@ -765,6 +763,8 @@ class EliteGreenEnemy extends BaseEliteEnemy {
       const dropX = self.x + self.width / 2;
       const dropY = self.y + self.height / 2;
       buffOrbs.push(new BuffOrb(dropX, dropY, "shield"));
+      healthOrbs.push(new HealthOrb(dropX - 20, dropY, 10));
+      healthOrbs.push(new HealthOrb(dropX + 20, dropY, 10));
     },
   };
   constructor(difficulty) {
@@ -847,7 +847,7 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 }
 
 class HealthOrb {
-  constructor(x, y, healAmount, size = 40) {
+  constructor(x, y, healAmount, size = 30) {
     this.width = size;
     this.height = size;
     this.speed = 3 * 60;
@@ -860,9 +860,9 @@ class HealthOrb {
   }
   draw() {
     ctx.fillStyle = COLORS.GREEN;
-    ctx.beginPath();
-    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
-    ctx.fill();
+    const thickness = this.width / 3.5;
+    ctx.fillRect(this.x, this.y + this.height / 2 - thickness / 2, this.width, thickness);
+    ctx.fillRect(this.x + this.width / 2 - thickness / 2, this.y, thickness, this.height);
   }
 }
 
@@ -986,7 +986,7 @@ function updateDifficultySettings(level) {
     wallHp: 10,
     elites: { purple: false, red: false, orange: false, green: false, blue: false },
     homingLifetime: 5000,
-    homingTurnSpeed: 3,
+    homingTurnSpeed: 1.5,
   };
   if (level === 1) {
     settings.hpMultiplier = 0.4;
@@ -1022,8 +1022,7 @@ function updateDifficultySettings(level) {
       settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1;
       settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15;
       settings.wallHp = 10 + (level - 5) * 2;
-      settings.homingLifetime = 3000 + (level - 5) * 5;
-      settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
+      settings.homingLifetime = 3000 + (level - 5) * 250;
     }
   }
   difficultySettings = settings;
@@ -1285,6 +1284,13 @@ function update(deltaTime) {
       deltaTime
     );
 
+  // 【変更】エリートが画面外に出たら消滅させる
+  if (currentEliteEnemy && currentEliteEnemy.y > SCREEN_HEIGHT) currentEliteEnemy = null;
+  if (currentBarrageEnemy && currentBarrageEnemy.y > SCREEN_HEIGHT) currentBarrageEnemy = null;
+  if (currentEliteRedEnemy && currentEliteRedEnemy.y > SCREEN_HEIGHT) currentEliteRedEnemy = null;
+  if (currentEliteGreenEnemy && currentEliteGreenEnemy.y > SCREEN_HEIGHT) currentEliteGreenEnemy = null;
+  if (currentEliteBlueEnemy && currentEliteBlueEnemy.y > SCREEN_HEIGHT) currentEliteBlueEnemy = null;
+
   const playerRect = { x: player.x, y: player.y, width: player.width, height: player.height };
   const eliteEnemies = [
     currentEliteEnemy,
@@ -1365,7 +1371,7 @@ function update(deltaTime) {
         const wall = currentEliteGreenEnemy.bullets[j];
         if (checkCollision(bullet, wall)) {
           if (wall.takeDamage(1)) {
-            healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 15));
+            healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 30));
             currentEliteGreenEnemy.bullets.splice(j, 1);
           }
           bullets.splice(i, 1);
@@ -1411,6 +1417,8 @@ function update(deltaTime) {
   if (currentTime - player.lastHitTime > player.invincibilityDuration) {
     let damageTaken = 0;
     let hitSource = null;
+    let isEliteAttack = false;
+
     const checkPlayerCollision = (targets, damage, removeOnHit = true) => {
       for (let i = targets.length - 1; i >= 0; i--) {
         if (checkCollision(playerRect, targets[i])) {
@@ -1422,10 +1430,12 @@ function update(deltaTime) {
       }
       return false;
     };
+
     if (currentEliteBlueEnemy) {
       for (const laser of currentEliteBlueEnemy.activeLasers) {
         if (laser.checkCollisionWithPlayer(playerRect)) {
           damageTaken += laser.damage;
+          isEliteAttack = true;
           break;
         }
       }
@@ -1435,16 +1445,24 @@ function update(deltaTime) {
     for (const fr_enemy of freeRoamEnemies) {
       if (checkPlayerCollision(fr_enemy.bullets, 0)) {
         collisionFound = true;
+        isEliteAttack = false;
         break;
       }
     }
+
     if (!collisionFound && damageTaken === 0) {
       if (checkPlayerCollision(enemies, 20)) {
+        isEliteAttack = false;
       } else if (checkPlayerCollision(freeRoamEnemies, 20)) {
+        isEliteAttack = false;
       } else if (checkPlayerCollision(explosionBullets, 0)) {
+        isEliteAttack = true;
       } else if (currentEliteEnemy && checkPlayerCollision(currentEliteEnemy.bullets, 0)) {
+        isEliteAttack = true;
       } else if (currentEliteRedEnemy && checkPlayerCollision(currentEliteRedEnemy.bullets, 0)) {
+        isEliteAttack = true;
       } else if (currentBarrageEnemy && checkPlayerCollision(currentBarrageEnemy.barrageOrbs, 15, false)) {
+        isEliteAttack = true;
         currentBarrageEnemy.generateExplosionBullets(
           hitSource.x + hitSource.width / 2,
           hitSource.y + hitSource.height / 2
@@ -1454,15 +1472,19 @@ function update(deltaTime) {
         for (const item of eliteEnemies) {
           if (item && item.isActive && checkCollision(playerRect, item)) {
             damageTaken += 30;
+            isEliteAttack = true;
             break;
           }
         }
       }
     }
+
     if (damageTaken > 0) {
       if (player.shields > 0) {
-        player.shields--;
-        healthOrbs.push(new HealthOrb(player.x + player.width / 2, player.y + player.height / 2, 10, 15));
+        if (isEliteAttack) {
+          player.shields--;
+          healthOrbs.push(new HealthOrb(player.x + player.width / 2, player.y + player.height / 2, 10, 30));
+        }
       } else {
         player.hp -= damageTaken;
         player.lastHitTime = currentTime;
@@ -1626,7 +1648,8 @@ function draw() {
       ctx.font = `bold ${size}px sans-serif`;
       ctx.fillStyle = `rgba(255, 224, 102, ${alpha})`;
       ctx.textAlign = "center";
-      ctx.fillText("DIFFICULTY UP!!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+      // 【変更】UIテキストを「LEVEL UP!!」に
+      ctx.fillText("LEVEL UP!!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
     } else {
       difficultyUpAnimation.active = false;
     }
@@ -1671,7 +1694,7 @@ function draw() {
     let text = "";
     switch (type) {
       case "spread":
-        color = COLORS.PURPLE;
+        color = COLORS.ORANGE;
         break;
       case "rateUp":
         color = COLORS.CRIMSON;
@@ -1749,7 +1772,8 @@ function draw() {
   ctx.font = `24px sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(`Score: ${score}`, 20, 40);
-  ctx.fillText(`Difficulty: ${currentDifficultyLevel}`, 20, 70);
+  // 【変更】UIテキストを「Level」に
+  ctx.fillText(`Level: ${currentDifficultyLevel}`, 20, 70);
 }
 
 // --- メインループ ---
