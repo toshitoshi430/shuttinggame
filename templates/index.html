@@ -1,59 +1,59 @@
 <!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>アギャパー</title>
-    <style>
-      /* 基本的なリセットとページ全体のスタイル */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden; /* スクロールバーを完全に非表示 */
-        background-color: #1a1a2e; /* ダークな背景色 */
-        -webkit-user-select: none; /* テキスト選択を無効化 */
-        -ms-user-select: none;
-        user-select: none;
-      }
-      body {
-        font-family: "Arial", sans-serif;
-        color: #e0e0e0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      h1 {
-        color: #ffe066; /* 目立つタイトル色 */
-        margin-bottom: 20px;
-        /* 画面が小さいときはタイトルも小さく */
-        font-size: clamp(1.5rem, 5vw, 2.5rem);
-      }
-      /* キャンバスをレスポンシブ対応させるためのスタイル */
-      canvas {
-        border: 2px solid #00f0ff;
-        background-color: #000000;
-        box-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
-        display: block;
-        /* アスペクト比を保ったまま、親要素（この場合はbody）に収まるようにする */
-        object-fit: contain;
-        /* 画面の幅と高さの小さい方に合わせて最大サイズを制限 */
-        max-width: 100vw;
-        max-height: 85vh; /* タイトル分の高さを考慮 */
-      }
-    </style>
-  </head>
-  <body>
-    <h1>A-G-Y-A-P-E-R</h1>
-    <!-- ゲームの基準解像度を1920x1080に設定 -->
-    <canvas id="gameCanvas" width="1080" height="1080"></canvas>
-    <!-- 正しいJavaScriptファイルのパスを指定 -->
-    <script src="{{ url_for('static', filename='game.js') }}" defer></script>
-  </body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>アジャパー</title>
+		<style>
+			/* 基本的なリセットとページ全体のスタイル */
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				overflow: hidden; /* スクロールバーを完全に非表示 */
+				background-color: #1a1a2e; /* ダークな背景色 */
+				-webkit-user-select: none; /* テキスト選択を無効化 */
+				-ms-user-select: none;
+				user-select: none;
+			}
+			body {
+				font-family: "Arial", sans-serif;
+				color: #e0e0e0;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+			}
+			h1 {
+				color: #ffe066; /* 目立つタイトル色 */
+				margin-bottom: 20px;
+				/* 画面が小さいときはタイトルも小さく */
+				font-size: clamp(1.5rem, 5vw, 2.5rem);
+			}
+			/* キャンバスをレスポンシブ対応させるためのスタイル */
+			canvas {
+				border: 2px solid #00f0ff;
+				background-color: #000000;
+				box-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+				display: block;
+				/* アスペクト比を保ったまま、親要素（この場合はbody）に収まるようにする */
+				object-fit: contain;
+				/* 画面の幅と高さの小さい方に合わせて最大サイズを制限 */
+				max-width: 100vw;
+				max-height: 85vh; /* タイトル分の高さを考慮 */
+			}
+		</style>
+	</head>
+	<body>
+		<h1>A-G-Y-A-P-E-R</h1>
+		<!-- ゲームの基準解像度を1920x1080に設定 -->
+		<canvas id="gameCanvas" width="1080" height="1080"></canvas>
+		<!-- 正しいJavaScriptファイルのパスを指定 -->
+		<script src="{{ url_for('static', filename='game.js') }}" defer></script>
+	</body>
 </html>
