@@ -877,7 +877,7 @@ class BuffOrb {
     this.color = COLORS.WHITE;
     switch (type) {
       case "spread":
-        this.color = COLORS.PURPLE;
+        this.color = COLORS.ORANGE;
         break;
       case "rateUp":
         this.color = COLORS.CRIMSON;
@@ -1022,7 +1022,7 @@ function updateDifficultySettings(level) {
       settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1;
       settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15;
       settings.wallHp = 10 + (level - 5) * 2;
-      settings.homingLifetime = 3000 + (level - 5) * 50;
+      settings.homingLifetime = 3000 + (level - 5) * 5;
       settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
     }
   }
