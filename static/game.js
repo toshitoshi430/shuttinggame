@@ -84,7 +84,7 @@ const bulletSettings = {
 	height: 25,
 	speed: 18 * 60,
 	cooldown: 100,
-	defaultRange: SCREEN_HEIGHT * 0.56,
+	defaultRange: SCREEN_HEIGHT * 0.65,
 };
 
 // 敵の設定
@@ -268,6 +268,7 @@ class HomingBullet {
 		this.spawnTime = performance.now();
 		this.lifetime = lifetime;
 		this.isExpired = false;
+		this.hp = 1;
 	}
 	update(deltaTime) {
 		if (performance.now() - this.spawnTime > this.lifetime) {
@@ -288,6 +289,13 @@ class HomingBullet {
 		ctx.beginPath();
 		ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
 		ctx.fill();
+	}
+	takeDamage(damage) {
+		this.hp -= damage;
+		if (this.hp <= 0) {
+			return true;
+		}
+		return false;
 	}
 }
 
@@ -440,6 +448,14 @@ class BarrageOrb {
 		ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth, hpBarHeight);
 		ctx.fillStyle = COLORS.GREEN;
 		ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth * hpRatio, hpBarHeight);
+	}
+	takeDamage(damage) {
+		this.hp -= damage;
+		score += 2;
+		if (this.hp <= 0) {
+			return true;
+		}
+		return false;
 	}
 }
 
@@ -1158,9 +1174,7 @@ function update(deltaTime) {
 						bullets.splice(i, 1);
 						bulletRemoved = true;
 					}
-					orb.hp -= 1;
-					score += 5;
-					if (orb.hp <= 0) {
+					if (orb.takeDamage(1)) {
 						currentBarrageEnemy.generateExplosionBullets(orb.x + orb.width / 2, orb.y + orb.height / 2);
 						currentBarrageEnemy.barrageOrbs.splice(j, 1);
 						score += 20;
@@ -1190,42 +1204,23 @@ function update(deltaTime) {
 
 	activeBeams.forEach((beam) => {
 		const damage = beam.damage;
-		const allTargets = [
-			...enemies,
-			...freeRoamEnemies,
-			...eliteEnemies.filter((e) => e),
-			...(currentEliteEnemy ? currentEliteEnemy.bullets : []),
-			...(currentEliteGreenEnemy ? currentEliteGreenEnemy.bullets : []),
-		];
-		for (let i = allTargets.length - 1; i >= 0; i--) {
-			const target = allTargets[i];
-			if (target && (target.isActive === undefined || target.isActive) && checkCollision(beam, target)) {
-				if (target.takeDamage(damage)) {
-					if (target instanceof Enemy) {
-						enemies = enemies.filter((e) => e !== target);
-					} else if (target instanceof FreeRoamEnemy) {
-						freeRoamEnemies = freeRoamEnemies.filter((e) => e !== target);
-					} else if (target instanceof BaseEliteEnemy) {
-						if (target === currentEliteEnemy) currentEliteEnemy = null;
-						if (target === currentBarrageEnemy) currentBarrageEnemy = null;
-						if (target === currentEliteRedEnemy) currentEliteRedEnemy = null;
-						if (target === currentEliteGreenEnemy) currentEliteGreenEnemy = null;
-						if (target === currentEliteBlueEnemy) currentEliteBlueEnemy = null;
-					}
-				} else if (target instanceof HomingBullet) {
-					const index = currentEliteEnemy.bullets.indexOf(target);
-					if (index > -1) {
-						currentEliteEnemy.bullets.splice(index, 1);
-						score += 1;
-					}
-				} else if (target instanceof ObstacleBullet) {
-					if (target.takeDamage(damage)) {
-						currentEliteGreenEnemy.bullets = currentEliteGreenEnemy.bullets.filter((w) => w !== target);
-						healthOrbs.push(new HealthOrb(target.x + target.width / 2, target.y + target.height / 2, 10, 15));
+		[...enemies, ...freeRoamEnemies, ...eliteEnemies.filter((e) => e)].forEach((enemy) => {
+			if (enemy && enemy.isActive && checkCollision(beam, enemy)) {
+				if (enemy.takeDamage(damage)) {
+					if (enemy instanceof Enemy) {
+						enemies = enemies.filter((e) => e !== enemy);
+					} else if (enemy instanceof FreeRoamEnemy) {
+						freeRoamEnemies = freeRoamEnemies.filter((e) => e !== enemy);
+					} else if (enemy instanceof BaseEliteEnemy) {
+						if (enemy === currentEliteEnemy) currentEliteEnemy = null;
+						if (enemy === currentBarrageEnemy) currentBarrageEnemy = null;
+						if (enemy === currentEliteRedEnemy) currentEliteRedEnemy = null;
+						if (enemy === currentEliteGreenEnemy) currentEliteGreenEnemy = null;
+						if (enemy === currentEliteBlueEnemy) currentEliteBlueEnemy = null;
 					}
 				}
 			}
-		}
+		});
 	});
 
 	if (currentTime - player.lastHitTime > player.invincibilityDuration) {
@@ -1282,11 +1277,12 @@ function update(deltaTime) {
 	}
 
 	for (let i = healthOrbs.length - 1; i >= 0; i--) {
-		if (checkCollision(playerRect, healthOrbs[i])) {
-			if (healthOrbs[i].healAmount <= 10) {
+		const orb = healthOrbs[i];
+		if (checkCollision(playerRect, orb)) {
+			if (orb.healAmount <= 10) {
 				player.hp = Math.min(player.maxHp, player.hp + 10);
 			} else {
-				player.hp += healthOrbs[i].healAmount;
+				player.hp += orb.healAmount;
 			}
 			healthOrbs.splice(i, 1);
 		}
