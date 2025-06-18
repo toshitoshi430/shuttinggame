@@ -53,6 +53,7 @@ let isBossBattleActive = false;
 let currentBoss = null;
 let difficultyUpAnimation = { active: false, alpha: 0, startTime: 0 };
 let gameOverTapCount = 0;
+let gameOverTapCount = 0;
 
 // --- プレイヤー設定 ---
 const player = {
