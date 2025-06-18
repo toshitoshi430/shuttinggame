@@ -20,6 +20,7 @@ const COLORS = {
 	LIME_GREEN: "#32CD32",
 	DARK_GRAY: "#646464",
 	BLUE: "#0099FF",
+	PINK: "#FF69B4",
 };
 
 // --- グローバルゲーム状態 ---
@@ -27,7 +28,6 @@ let score = 0,
 	gameOver = false,
 	gameStartTime = 0,
 	currentDifficultyLevel = 1;
-const MAX_DIFFICULTY_LEVEL = 10;
 let lastTime = 0,
 	deltaTime = 0;
 let bullets = [],
@@ -36,21 +36,21 @@ let bullets = [],
 	explosionBullets = [],
 	healthOrbs = [],
 	buffOrbs = [],
-	activeBeams = [];
-let currentEliteEnemy = null,
-	currentBarrageEnemy = null,
-	currentEliteRedEnemy = null,
+	activeBeams = [],
+	playerHomingBullets = [];
+let currentElitePurple = null,
+	currentEliteOrange = null,
+	currentElitePink = null,
 	currentEliteGreenEnemy = null,
 	currentEliteBlueEnemy = null;
 let lastShotTime = 0,
 	lastEnemySpawnTime = 0,
-	lastEliteEnemySpawnTime = 0,
 	lastFreeroamSpawnTime = 0,
-	lastBarrageSpawnTime = 0,
-	lastEliteRedSpawnTime = 0,
-	lastEliteGreenSpawnTime = 0,
-	lastEliteBlueSpawnTime = 0;
+	lastHomingShotTime = 0,
+	lastEliteSlotSpawnTime = 0;
+const MAX_ACTIVE_ELITES = 8;
 let difficultyUpAnimation = { active: false, alpha: 0, startTime: 0 };
+let gameOverTapCount = 0;
 
 // --- プレイヤー設定 ---
 const player = {
@@ -58,24 +58,29 @@ const player = {
 	height: 30,
 	x: (SCREEN_WIDTH - 30) / 2,
 	y: SCREEN_HEIGHT - 30 - 50,
-	hp: 100,
-	maxHp: 100,
+	hp: 200,
+	maxHp: 200,
 	lastHitTime: 0,
 	invincibilityDuration: 1000,
-	shotsActive: false,
-	shotsStartTime: 0,
-	shotsDuration: 5000,
+	spreadLevel: 0,
+	spreadStartTime: 0,
+	spreadDuration: 10000,
+	rateUpLevel: 0,
+	rateUpStartTime: 0,
+	rateUpOffsetAngle: 0,
+	rateUpDuration: 10000,
+	shieldLevel: 0,
 	shields: 0,
 	shieldObjectSize: 40,
 	shieldOffsetAngle: 0,
-	pierceActive: false,
-	pierceStartTime: 0,
-	pierceDuration: 7000,
-	rangeActive: false,
+	rangeLevel: 0,
 	rangeStartTime: 0,
 	rangeDuration: 8000,
 	beamCharges: 0,
 	lastBeamTime: 0,
+	homingLevel: 0,
+	homingStartTime: 0,
+	homingDuration: 10000,
 };
 
 // 弾の設定
@@ -83,7 +88,7 @@ const bulletSettings = {
 	width: 8,
 	height: 25,
 	speed: 18 * 60,
-	cooldown: 100,
+	cooldown: 80,
 	defaultRange: SCREEN_HEIGHT * 0.65,
 };
 
@@ -104,7 +109,7 @@ class PlayerBullet {
 		this.y -= bulletSettings.speed * deltaTime;
 	}
 	draw() {
-		ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.WHITE;
+		ctx.fillStyle = COLORS.WHITE;
 		ctx.fillRect(this.x, this.y, this.width, this.height);
 	}
 }
@@ -125,8 +130,57 @@ class PlayerSpreadBullet {
 		this.y += this.vy * deltaTime;
 	}
 	draw() {
-		ctx.fillStyle = player.pierceActive ? COLORS.CRIMSON : COLORS.WHITE;
+		ctx.fillStyle = COLORS.WHITE;
 		ctx.fillRect(this.x, this.y, this.width, this.height);
+	}
+}
+
+class PlayerHomingBullet {
+	constructor(x, y, target) {
+		this.x = x;
+		this.y = y;
+		this.width = 10;
+		this.height = 70;
+		this.speed = 10 * 60;
+		this.turnSpeed = 20;
+		this.target = target;
+		this.angle = -Math.PI / 2;
+		this.damage = 10;
+		this.isExpired = false;
+	}
+
+	update(deltaTime) {
+		if (!this.target || !this.target.isActive) {
+			this.y += Math.sin(this.angle) * this.speed * deltaTime;
+			this.x += Math.cos(this.angle) * this.speed * deltaTime;
+			if (this.y < -this.height) this.isExpired = true;
+			return;
+		}
+
+		const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+		let angleDiff = targetAngle - this.angle;
+		while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+		while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+
+		const turnAmount = this.turnSpeed * deltaTime;
+		this.angle += Math.max(-turnAmount, Math.min(turnAmount, angleDiff));
+
+		this.x += Math.cos(this.angle) * this.speed * deltaTime;
+		this.y += Math.sin(this.angle) * this.speed * deltaTime;
+
+		if (this.y < -this.height) {
+			this.isExpired = true;
+		}
+	}
+
+	draw() {
+		ctx.fillStyle = COLORS.WHITE;
+
+		ctx.save();
+		ctx.translate(this.x, this.y);
+		ctx.rotate(this.angle + Math.PI / 2);
+		ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+		ctx.restore();
 	}
 }
 
@@ -322,6 +376,79 @@ class Beam {
 	}
 }
 
+class EnemyLaser {
+	constructor(sourceElite, targetX, targetY, lockOnTime) {
+		this.sourceElite = sourceElite;
+		this.target = { x: targetX + player.width / 2, y: targetY + player.height / 2 };
+		this.damage = 30;
+		this.thickness = 30;
+		this.beamLength = SCREEN_WIDTH * 1.5;
+
+		const source = { x: sourceElite.x + sourceElite.width / 2, y: sourceElite.y + sourceElite.height / 2 };
+		this.angle = Math.atan2(this.target.y - source.y, this.target.x - source.x);
+
+		this.spawnTime = performance.now();
+		this.isExpired = false;
+
+		this.lockOnDuration = lockOnTime;
+		this.beamFireTime = this.spawnTime + this.lockOnDuration;
+		this.beamDuration = 700;
+	}
+
+	update(deltaTime) {
+		if (performance.now() > this.beamFireTime + this.beamDuration) {
+			this.isExpired = true;
+		}
+	}
+
+	checkCollisionWithPlayer(playerRect) {
+		if (performance.now() < this.beamFireTime) {
+			return false;
+		}
+
+		const playerCenterX = playerRect.x + playerRect.width / 2;
+		const playerCenterY = playerRect.y + playerRect.height / 2;
+
+		const sourceX = this.sourceElite.x + this.sourceElite.width / 2;
+		const sourceY = this.sourceElite.y + this.sourceElite.height / 2;
+
+		const dx = sourceX - playerCenterX;
+		const dy = sourceY - playerCenterY;
+		const dist = Math.abs(dx * Math.sin(this.angle) - dy * Math.cos(this.angle));
+
+		return dist < this.thickness / 2 + playerRect.width / 2;
+	}
+
+	draw() {
+		const currentTime = performance.now();
+		const source = {
+			x: this.sourceElite.x + this.sourceElite.width / 2,
+			y: this.sourceElite.y + this.sourceElite.height / 2,
+		};
+
+		if (currentTime < this.beamFireTime) {
+			const elapsed = currentTime - this.spawnTime;
+			const alpha = 0.8 * Math.abs(Math.sin((elapsed / 200) * Math.PI));
+			ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.moveTo(source.x, source.y);
+			ctx.lineTo(this.target.x, this.target.y);
+			ctx.stroke();
+		} else {
+			const elapsed = currentTime - this.beamFireTime;
+			const alpha = Math.max(0, 0.6 * (1 - elapsed / this.beamDuration));
+
+			ctx.save();
+			ctx.translate(source.x, source.y);
+			ctx.rotate(this.angle);
+			ctx.fillStyle = `rgba(0, 153, 255, ${alpha})`;
+			ctx.fillRect(0, -this.thickness / 2, this.beamLength, this.thickness);
+			ctx.restore();
+		}
+	}
+}
+
 class BaseEliteEnemy {
 	constructor(config, difficulty) {
 		this.width = config.width;
@@ -365,25 +492,25 @@ class BaseEliteEnemy {
 	}
 }
 
-class EliteEnemy extends BaseEliteEnemy {
+class ElitePurple extends BaseEliteEnemy {
 	static spawnInterval = 5500;
 	static config = {
 		width: 60,
 		height: 60,
 		x: (SCREEN_WIDTH - 60) / 2,
 		speed: 1.2 * 60,
-		hp: 120,
-		maxHp: 120,
+		hp: 300,
+		maxHp: 300,
 		shotCooldownBase: 2000,
 		color: COLORS.PURPLE,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
-			buffOrbs.push(new BuffOrb(dropX, dropY, "spread"));
+			buffOrbs.push(new BuffOrb(dropX, dropY, "homing"));
 		},
 	};
 	constructor(difficulty) {
-		super(EliteEnemy.config, difficulty);
+		super(ElitePurple.config, difficulty);
 		this.difficulty = difficulty;
 	}
 	update(shotCooldown, deltaTime) {
@@ -416,10 +543,9 @@ class EliteEnemy extends BaseEliteEnemy {
 }
 
 class BarrageOrb {
-	constructor(x, y) {
+	constructor(x, y, angle) {
 		this.width = 35;
 		this.height = 35;
-		this.speed = 2 * 60;
 		this.x = x;
 		this.y = y;
 		this.hp = 3;
@@ -427,10 +553,20 @@ class BarrageOrb {
 		this.exploded = false;
 		this.explosionCooldown = 2000;
 		this.spawnTime = performance.now();
+		const speed = 2.5 * 60;
+		this.vx = speed * Math.cos(angle);
+		this.vy = speed * Math.sin(angle);
 	}
 	update(deltaTime) {
-		this.y += this.speed * deltaTime;
-		if (this.y > SCREEN_HEIGHT - this.height || performance.now() - this.spawnTime > this.explosionCooldown) {
+		this.x += this.vx * deltaTime;
+		this.y += this.vy * deltaTime;
+		if (
+			this.y > SCREEN_HEIGHT + this.height ||
+			this.y < -this.height ||
+			this.x < -this.width ||
+			this.x > SCREEN_WIDTH + this.width ||
+			performance.now() - this.spawnTime > this.explosionCooldown
+		) {
 			if (!this.exploded) {
 				this.exploded = true;
 				return true;
@@ -459,24 +595,24 @@ class BarrageOrb {
 	}
 }
 
-class BarrageEnemy extends BaseEliteEnemy {
+class EliteOrange extends BaseEliteEnemy {
 	static spawnInterval = 18000;
 	static config = {
 		width: 70,
 		height: 70,
 		speed: 0.8 * 60,
-		hp: 250,
-		maxHp: 250,
+		hp: 300,
+		maxHp: 300,
 		shotCooldownBase: 2500,
 		color: COLORS.ORANGE,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
-			healthOrbs.push(new HealthOrb(dropX, dropY, 100));
+			buffOrbs.push(new BuffOrb(dropX, dropY, "spread"));
 		},
 	};
 	constructor(difficulty) {
-		const conf = { ...BarrageEnemy.config, targetY: 50 + Math.random() * 360 };
+		const conf = { ...EliteOrange.config, targetY: 50 + Math.random() * 360 };
 		super(conf, difficulty);
 		this.difficulty = difficulty;
 		this.barrageOrbs = [];
@@ -488,22 +624,23 @@ class BarrageEnemy extends BaseEliteEnemy {
 			this.spawnOrb();
 			this.lastShotTime = currentTime;
 		}
-		this.barrageOrbs.forEach((orb) => {
+		this.barrageOrbs.forEach((orb, index) => {
 			if (orb.update(deltaTime)) {
 				this.generateExplosionBullets(orb.x + orb.width / 2, orb.y + orb.height / 2);
-				this.barrageOrbs.splice(this.barrageOrbs.indexOf(orb), 1);
+				this.barrageOrbs.splice(index, 1);
 			}
 		});
 	}
 	spawnOrb() {
 		const orbX = this.x + this.width / 2 - 35 / 2;
 		const orbY = this.y + this.height;
-		this.barrageOrbs.push(new BarrageOrb(orbX, orbY));
+		const angle = Math.random() * Math.PI;
+		this.barrageOrbs.push(new BarrageOrb(orbX, orbY, angle));
 	}
 	generateExplosionBullets(x, y) {
 		const numBullets = 18;
 		for (let i = 0; i < numBullets; i++) {
-			const angle = (Math.PI / (numBullets - 1)) * i;
+			const angle = ((2 * Math.PI) / numBullets) * i;
 			const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
 			explosionBullets.push(
 				new GenericEnemyBullet(
@@ -526,25 +663,25 @@ class BarrageEnemy extends BaseEliteEnemy {
 	}
 }
 
-class EliteRedEnemy extends BaseEliteEnemy {
+class ElitePink extends BaseEliteEnemy {
 	static spawnInterval = 12000;
 	static config = {
 		width: 50,
 		height: 50,
 		speed: 1.5 * 60,
 		targetY: 150,
-		hp: 70,
-		maxHp: 70,
+		hp: 200,
+		maxHp: 200,
 		shotCooldownBase: 500,
-		color: COLORS.CRIMSON,
+		color: COLORS.PINK,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
-			buffOrbs.push(new BuffOrb(dropX, dropY, "pierce"));
+			buffOrbs.push(new BuffOrb(dropX, dropY, "rateUp"));
 		},
 	};
 	constructor(difficulty) {
-		super(EliteRedEnemy.config, difficulty);
+		super(ElitePink.config, difficulty);
 		this.difficulty = difficulty;
 	}
 	update(shotCooldown, deltaTime) {
@@ -571,7 +708,7 @@ class EliteRedEnemy extends BaseEliteEnemy {
 			const targetBulletX = bulletX + Math.cos(angle) * 100;
 			const targetBulletY = bulletY + Math.sin(angle) * 100;
 			this.bullets.push(
-				new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 15, 15, speed, COLORS.CRIMSON, 15)
+				new GenericEnemyBullet(bulletX, bulletY, targetBulletX, targetBulletY, 15, 15, speed, COLORS.PINK, 15)
 			);
 		}
 	}
@@ -625,14 +762,16 @@ class EliteGreenEnemy extends BaseEliteEnemy {
 		height: 80,
 		speed: 1.0 * 60,
 		targetY: 100,
-		hp: 350,
-		maxHp: 350,
+		hp: 500,
+		maxHp: 500,
 		shotCooldownBase: 4000,
 		color: COLORS.LIME_GREEN,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "shield"));
+			healthOrbs.push(new HealthOrb(dropX - 20, dropY, 10));
+			healthOrbs.push(new HealthOrb(dropX + 20, dropY, 10));
 		},
 	};
 	constructor(difficulty) {
@@ -672,9 +811,9 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 		height: 70,
 		speed: 1.5 * 60,
 		targetY: 150,
-		hp: 200,
-		maxHp: 200,
-		shotCooldownBase: 1500,
+		hp: 300,
+		maxHp: 300,
+		shotCooldownBase: 3500,
 		color: COLORS.BLUE,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
@@ -684,33 +823,40 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 	};
 	constructor(difficulty) {
 		super(EliteBlueEnemy.config, difficulty);
+		this.activeLasers = [];
 	}
-	update(shotCooldown, deltaTime) {
+	update(shotCooldown, deltaTime, level) {
 		super.update(shotCooldown, deltaTime);
 		const currentTime = performance.now();
-		if (this.y > 0 && currentTime - this.lastShotTime > shotCooldown) {
-			this.spawnMinions();
+
+		if (this.y > 50 && this.activeLasers.length === 0 && currentTime - this.lastShotTime > shotCooldown) {
+			this.shootBeam(level);
 			this.lastShotTime = currentTime;
 		}
+
+		this.activeLasers.forEach((laser, index) => {
+			laser.update(deltaTime);
+			if (laser.isExpired) {
+				this.activeLasers.splice(index, 1);
+			}
+		});
 	}
-	spawnMinions() {
-		const numMinions = 3;
-		for (let i = 0; i < numMinions; i++) {
-			const angle = Math.random() * 2 * Math.PI;
-			const radius = 100;
-			const spawnX = this.x + this.width / 2 + Math.cos(angle) * radius;
-			const spawnY = this.y + this.height / 2 + Math.sin(angle) * radius;
-			const speed = freeroamEnemySettings.speedBase * 0.8;
-			freeRoamEnemies.push(new FreeRoamEnemy(spawnX, spawnY, speed));
-		}
+
+	shootBeam(level) {
+		const targetX = player.x;
+		const targetY = player.y;
+		// Levelに応じてロックオン時間を計算（基本1500msから1レベル毎に50ms短縮）
+		const lockOnTime = Math.max(500, 1500 - (level - 1) * 50); // 最短でも0.5秒は確保
+		this.activeLasers.push(new EnemyLaser(this, targetX, targetY, lockOnTime));
 	}
 	draw() {
 		super.draw();
+		this.activeLasers.forEach((laser) => laser.draw());
 	}
 }
 
 class HealthOrb {
-	constructor(x, y, healAmount, size = 40) {
+	constructor(x, y, healAmount, size = 30) {
 		this.width = size;
 		this.height = size;
 		this.speed = 3 * 60;
@@ -723,9 +869,9 @@ class HealthOrb {
 	}
 	draw() {
 		ctx.fillStyle = COLORS.GREEN;
-		ctx.beginPath();
-		ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
-		ctx.fill();
+		const thickness = this.width / 3.5;
+		ctx.fillRect(this.x, this.y + this.height / 2 - thickness / 2, this.width, thickness);
+		ctx.fillRect(this.x + this.width / 2 - thickness / 2, this.y, thickness, this.height);
 	}
 }
 
@@ -740,16 +886,19 @@ class BuffOrb {
 		this.color = COLORS.WHITE;
 		switch (type) {
 			case "spread":
-				this.color = COLORS.PURPLE;
+				this.color = COLORS.ORANGE;
 				break;
-			case "pierce":
-				this.color = COLORS.CRIMSON;
+			case "rateUp":
+				this.color = COLORS.PINK;
 				break;
 			case "shield":
 				this.color = COLORS.LIGHT_BLUE;
 				break;
 			case "range":
 				this.color = COLORS.BLUE;
+				break;
+			case "homing":
+				this.color = COLORS.PURPLE;
 				break;
 		}
 	}
@@ -816,7 +965,10 @@ canvas.addEventListener("touchend", (e) => {
 	e.preventDefault();
 	isInputActive = false;
 	if (gameOver) {
-		resetGame();
+		gameOverTapCount++;
+		if (gameOverTapCount >= 3) {
+			resetGame();
+		}
 	}
 });
 canvas.addEventListener("touchcancel", (e) => {
@@ -825,7 +977,10 @@ canvas.addEventListener("touchcancel", (e) => {
 });
 canvas.addEventListener("click", (e) => {
 	if (gameOver) {
-		resetGame();
+		gameOverTapCount++;
+		if (gameOverTapCount >= 3) {
+			resetGame();
+		}
 	}
 });
 
@@ -837,58 +992,51 @@ function updateDifficultySettings(level) {
 		speedMultiplier: 1.0,
 		bulletSpeedMultiplier: 1.0,
 		attackRateMultiplier: 1.0,
+		elites: { purple: false, pink: false, orange: false, green: false, blue: false },
 		wallHp: 10,
-		elites: { purple: false, red: false, orange: false, green: false, blue: false },
-		homingLifetime: 5000,
-		homingTurnSpeed: 3,
+		homingLifetime: 2000,
+		homingTurnSpeed: 1.5,
+		eliteSlotInterval: 3000, // 【新設】エリートの出現枠タイマーの基本間隔
 	};
-	if (level === 1) {
-		settings.hpMultiplier = 0.4;
-		settings.wallHp = 3;
-		settings.elites.purple = true;
-		settings.homingLifetime = 2000;
-	} else if (level === 2) {
-		settings.hpMultiplier = 0.6;
-		settings.wallHp = 5;
-		settings.elites.purple = true;
-		settings.elites.red = true;
-		settings.homingLifetime = 3000;
-	} else if (level === 3) {
-		settings.hpMultiplier = 0.8;
-		settings.wallHp = 8;
-		settings.elites.purple = true;
-		settings.elites.red = true;
-		settings.elites.green = true;
-		settings.homingLifetime = 4000;
-	} else if (level === 4) {
-		settings.hpMultiplier = 1.0;
-		settings.wallHp = 10;
-		settings.elites.purple = true;
-		settings.elites.red = true;
-		settings.elites.green = true;
-		settings.elites.blue = true;
-		settings.homingLifetime = 5000;
-	} else {
-		settings.elites = { purple: true, red: true, orange: true, green: true, blue: true };
-		if (level >= 6) {
-			settings.hpMultiplier = 1.0 + (level - 5) * 0.1;
-			settings.speedMultiplier = 1.0 + (level - 5) * 0.08;
-			settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.1;
-			settings.attackRateMultiplier = 1.0 + (level - 5) * 0.15;
-			settings.wallHp = 10 + (level - 5) * 2;
-			settings.homingLifetime = 3000 + (level - 5) * 50;
-			settings.homingTurnSpeed = 3 + (level - 5) * 0.4;
-		}
+
+	// 【変更】画像の内容を反映
+	if (level >= 6) {
+		settings.hpMultiplier = 1.0 + (level - 5) * 0.1;
+		settings.speedMultiplier = 1.0 + (level - 5) * 0.01;
+		settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.01;
+		settings.attackRateMultiplier = 1.0 + (level - 5) * 0.01;
+		settings.wallHp = 10 + (level - 5) * 2;
+		settings.homingLifetime = 3000 + (level - 5) * 0.01;
 	}
+
+	// エリートの出現可否
+	if (level >= 1) {
+		settings.elites.purple = true;
+	}
+	if (level >= 2) {
+		settings.elites.pink = true;
+	}
+	if (level >= 3) {
+		settings.elites.green = true;
+	}
+	if (level >= 4) {
+		settings.elites.blue = true;
+	}
+	if (level >= 5) {
+		settings.elites.orange = true;
+	}
+
 	difficultySettings = settings;
 }
 
-function getAdjustedValue(baseValue, level, reductionRate = 0.9, increaseRate = 1.1) {
-	const power = level - 1;
-	if (baseValue >= 1000) return baseValue * Math.pow(reductionRate, power);
-	else return baseValue * Math.pow(increaseRate, power);
-}
+// 【変更】この関数は問題の原因だったため削除
+// function getAdjustedValue(baseValue, level, reductionRate = 0.9, increaseRate = 1.1) {
+//   const power = level - 1;
+//   if (baseValue >= 1000) return baseValue * Math.pow(reductionRate, power);
+//   else return baseValue * Math.pow(increaseRate, power);
+// }
 function checkCollision(rect1, rect2) {
+	if (!rect1 || !rect2) return false;
 	return (
 		rect1.x < rect2.x + rect2.width &&
 		rect1.x + rect1.width > rect2.x &&
@@ -902,17 +1050,21 @@ function resetGame() {
 	score = 0;
 	gameOver = false;
 	gameStartTime = performance.now();
+	gameOverTapCount = 0;
 	currentDifficultyLevel = 1;
 	lastTime = 0;
 	updateDifficultySettings(1);
-	player.hp = player.maxHp;
+	player.hp = 200;
+	player.maxHp = 200;
 	player.x = (SCREEN_WIDTH - player.width) / 2;
 	player.y = SCREEN_HEIGHT - player.height - 30;
-	player.shotsActive = false;
+	player.spreadLevel = 0;
+	player.rateUpLevel = 0;
+	player.shieldLevel = 0;
 	player.shields = 0;
-	player.pierceActive = false;
-	player.rangeActive = false;
+	player.rangeLevel = 0;
 	player.beamCharges = 0;
+	player.homingLevel = 0;
 	bullets = [];
 	enemies = [];
 	freeRoamEnemies = [];
@@ -920,19 +1072,17 @@ function resetGame() {
 	healthOrbs = [];
 	buffOrbs = [];
 	activeBeams = [];
-	currentEliteEnemy = null;
-	currentBarrageEnemy = null;
-	currentEliteRedEnemy = null;
+	playerHomingBullets = [];
+	currentElitePurple = null;
+	currentEliteOrange = null;
+	currentElitePink = null;
 	currentEliteGreenEnemy = null;
 	currentEliteBlueEnemy = null;
 	lastShotTime = 0;
 	lastEnemySpawnTime = 0;
-	lastEliteEnemySpawnTime = 0;
 	lastFreeroamSpawnTime = 0;
-	lastBarrageSpawnTime = 0;
-	lastEliteRedSpawnTime = 0;
-	lastEliteGreenSpawnTime = 0;
-	lastEliteBlueSpawnTime = 0;
+	lastHomingShotTime = 0;
+	lastEliteSlotSpawnTime = 0;
 }
 
 // --- 更新処理 ---
@@ -948,7 +1098,7 @@ function update(deltaTime) {
 		return;
 	}
 	const currentTime = performance.now();
-	const newDifficultyLevel = Math.min(MAX_DIFFICULTY_LEVEL, 1 + Math.floor(score / 2000));
+	const newDifficultyLevel = 1 + Math.floor(score / 2000);
 
 	if (newDifficultyLevel !== currentDifficultyLevel) {
 		currentDifficultyLevel = newDifficultyLevel;
@@ -958,16 +1108,30 @@ function update(deltaTime) {
 
 	const speedMultiplier = difficultySettings.speedMultiplier || 1.0;
 	const currentEnemySpeed = enemySettings.speedBase * speedMultiplier;
-	const currentEnemySpawnInterval = getAdjustedValue(enemySettings.spawnIntervalBase, newDifficultyLevel);
-	const currentFreeroamEnemySpeed = freeroamEnemySettings.speedBase * speedMultiplier;
-	const currentFreeroamSpawnInterval = getAdjustedValue(freeroamEnemySettings.spawnIntervalBase, newDifficultyLevel);
+	const currentEnemySpawnInterval = enemySettings.spawnIntervalBase;
+
+	const currentFreeroamEnemySpeed = freeroamEnemySettings.speedBase * speedMultiplier; // ← この行を追加
+
+	// 【変更】getAdjustedValueを削除したので、こちらのスケーリングも見直し
+	const currentFreeroamSpawnInterval =
+		freeroamEnemySettings.spawnIntervalBase / (difficultySettings.attackRateMultiplier || 1.0);
 
 	if (player.hp > player.maxHp) {
 		player.hp -= 20 * deltaTime;
 	}
-	if (player.shotsActive && currentTime - player.shotsStartTime > player.shotsDuration) player.shotsActive = false;
-	if (player.pierceActive && currentTime - player.pierceStartTime > player.pierceDuration) player.pierceActive = false;
-	if (player.rangeActive && currentTime - player.rangeStartTime > player.rangeDuration) player.rangeActive = false;
+	if (player.homingLevel > 0) {
+		player.shieldOffsetAngle = (player.shieldOffsetAngle + 90 * (deltaTime || 0)) % 360;
+	}
+	if (player.rateUpLevel > 0) {
+		player.rateUpOffsetAngle = (player.rateUpOffsetAngle + 180 * deltaTime) % 360;
+	}
+	if (player.spreadLevel > 0 && currentTime - player.spreadStartTime > player.spreadDuration) player.spreadLevel = 0;
+	if (player.rateUpLevel > 0 && currentTime - player.rateUpStartTime > player.rateUpDuration) player.rateUpLevel = 0;
+	if (player.rangeLevel > 0 && currentTime - player.rangeStartTime > player.rangeDuration) {
+		player.rangeLevel = 0;
+		player.beamCharges = 0;
+	}
+	if (player.homingLevel > 0 && currentTime - player.homingStartTime > player.homingDuration) player.homingLevel = 0;
 
 	if (player.beamCharges > 0 && currentTime - player.lastBeamTime > 1000) {
 		activeBeams.push(new Beam(player.x + player.width / 2 - player.width * 1.5, player.width * 3));
@@ -984,23 +1148,71 @@ function update(deltaTime) {
 	player.x = Math.max(0, Math.min(player.x, SCREEN_WIDTH - player.width));
 	player.y = Math.max(0, Math.min(player.y, SCREEN_HEIGHT - player.height));
 
-	if (currentTime - lastShotTime > bulletSettings.cooldown) {
+	let rateMultiplier = 1;
+	if (player.rateUpLevel > 0) {
+		rateMultiplier = player.rateUpLevel * 1.5;
+	}
+	const cooldown = bulletSettings.cooldown / rateMultiplier;
+	if (currentTime - lastShotTime > cooldown) {
 		const bulletXCenter = player.x + player.width / 2;
 		const bulletYBase = player.y;
-		if (player.shotsActive) {
+
+		if (player.spreadLevel > 0) {
 			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, -25, bulletSettings.speed));
 			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, 25, bulletSettings.speed));
 		}
+		if (player.spreadLevel > 1) {
+			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, -12.5, bulletSettings.speed));
+			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, 12.5, bulletSettings.speed));
+		}
+		if (player.spreadLevel > 2) {
+			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, -40, bulletSettings.speed));
+			bullets.push(new PlayerSpreadBullet(bulletXCenter, bulletYBase, 40, bulletSettings.speed));
+		}
+
 		bullets.push(new PlayerBullet(bulletXCenter - bulletSettings.width / 2, bulletYBase));
 		lastShotTime = currentTime;
 	}
 
-	bullets.forEach((b) => b.update(deltaTime));
-	if (!player.rangeActive) {
-		bullets = bullets.filter((b) => Math.abs(b.spawnY - b.y) < bulletSettings.defaultRange);
+	const homingCooldown = 800 / rateMultiplier;
+	if (player.homingLevel > 0 && currentTime - lastHomingShotTime > homingCooldown) {
+		const allElites = [
+			currentElitePurple,
+			currentEliteOrange,
+			currentElitePink,
+			currentEliteGreenEnemy,
+			currentEliteBlueEnemy,
+		].filter((e) => e && e.isActive);
+		if (allElites.length > 0) {
+			let closestElite = null;
+			let minDistance = Infinity;
+			allElites.forEach((elite) => {
+				const dx = elite.x - player.x;
+				const dy = elite.y - player.y;
+				const distance = Math.sqrt(dx * dx + dy * dy);
+				if (distance < minDistance) {
+					minDistance = distance;
+					closestElite = elite;
+				}
+			});
+			if (closestElite) {
+				for (let i = 0; i < player.homingLevel; i++) {
+					const angleOffset = (i * (2 * Math.PI)) / player.homingLevel;
+					const centerX = player.x + player.width / 2;
+					const centerY = player.y + player.height / 2;
+					const angleRad = (player.shieldOffsetAngle * Math.PI) / 180 + angleOffset;
+					const dist = player.width / 2 + 40;
+					const spawnX = centerX + dist * Math.cos(angleRad);
+					const spawnY = centerY + dist * Math.sin(angleRad);
+					playerHomingBullets.push(new PlayerHomingBullet(spawnX, spawnY, closestElite));
+				}
+				lastHomingShotTime = currentTime;
+			}
+		}
 	}
-	bullets = bullets.filter((b) => b.y > -b.height);
 
+	bullets.forEach((b) => b.update(deltaTime));
+	playerHomingBullets.forEach((b) => b.update(deltaTime));
 	enemies.forEach((e) => e.update(deltaTime));
 	freeRoamEnemies.forEach((e) => e.update(deltaTime));
 	explosionBullets.forEach((b) => b.update(deltaTime));
@@ -1032,172 +1244,178 @@ function update(deltaTime) {
 		lastFreeroamSpawnTime = currentTime;
 	}
 
+	const currentEliteSlotInterval = difficultySettings.eliteSlotInterval - (newDifficultyLevel - 1) * 100; // レベルで短縮
+	if (currentTime - lastEliteSlotSpawnTime > currentEliteSlotInterval) {
+		const activeElitesCount = [
+			currentElitePurple,
+			currentEliteOrange,
+			currentElitePink,
+			currentEliteGreenEnemy,
+			currentEliteBlueEnemy,
+		].filter((e) => e !== null).length;
+
+		if (activeElitesCount < MAX_ACTIVE_ELITES) {
+			let spawnCandidates = [];
+			if (difficultySettings.elites.purple && !currentElitePurple) spawnCandidates.push("purple");
+			if (difficultySettings.elites.pink && !currentElitePink) spawnCandidates.push("pink");
+			if (difficultySettings.elites.orange && !currentEliteOrange) spawnCandidates.push("orange");
+			if (difficultySettings.elites.green && !currentEliteGreenEnemy) spawnCandidates.push("green");
+			if (difficultySettings.elites.blue && !currentEliteBlueEnemy) spawnCandidates.push("blue");
+
+			if (spawnCandidates.length > 0) {
+				const chosenEliteType = spawnCandidates[Math.floor(Math.random() * spawnCandidates.length)];
+				switch (chosenEliteType) {
+					case "purple":
+						currentElitePurple = new ElitePurple(difficultySettings);
+						break;
+					case "pink":
+						currentElitePink = new ElitePink(difficultySettings);
+						break;
+					case "orange":
+						currentEliteOrange = new EliteOrange(difficultySettings);
+						break;
+					case "green":
+						currentEliteGreenEnemy = new EliteGreenEnemy(difficultySettings);
+						break;
+					case "blue":
+						currentEliteBlueEnemy = new EliteBlueEnemy(difficultySettings);
+						break;
+				}
+			}
+		}
+		lastEliteSlotSpawnTime = currentTime;
+	}
+
 	const eliteAttackRate = difficultySettings.attackRateMultiplier || 1.0;
-	if (
-		difficultySettings.elites.purple &&
-		!currentEliteEnemy &&
-		currentTime - lastEliteEnemySpawnTime > EliteEnemy.spawnInterval / eliteAttackRate
-	) {
-		currentEliteEnemy = new EliteEnemy(difficultySettings);
-		lastEliteEnemySpawnTime = currentTime;
-	}
-	if (currentEliteEnemy)
-		currentEliteEnemy.update(
-			getAdjustedValue(EliteEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+	const eliteAttackCooldownReduction = difficultySettings.attackCooldownReduction || 0;
+
+	if (currentElitePurple)
+		currentElitePurple.update(
+			Math.max(100, ElitePurple.config.shotCooldownBase - eliteAttackCooldownReduction) / eliteAttackRate,
 			deltaTime
 		);
-	if (
-		difficultySettings.elites.orange &&
-		!currentBarrageEnemy &&
-		currentTime - lastBarrageSpawnTime > BarrageEnemy.spawnInterval / eliteAttackRate
-	) {
-		currentBarrageEnemy = new BarrageEnemy(difficultySettings);
-		lastBarrageSpawnTime = currentTime;
-	}
-	if (currentBarrageEnemy)
-		currentBarrageEnemy.update(
-			getAdjustedValue(BarrageEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+	if (currentEliteOrange)
+		currentEliteOrange.update(
+			Math.max(100, EliteOrange.config.shotCooldownBase - eliteAttackCooldownReduction) / eliteAttackRate,
 			deltaTime
 		);
-	if (
-		difficultySettings.elites.red &&
-		!currentEliteRedEnemy &&
-		currentTime - lastEliteRedSpawnTime > EliteRedEnemy.spawnInterval / eliteAttackRate
-	) {
-		currentEliteRedEnemy = new EliteRedEnemy(difficultySettings);
-		lastEliteRedSpawnTime = currentTime;
-	}
-	if (currentEliteRedEnemy)
-		currentEliteRedEnemy.update(
-			getAdjustedValue(EliteRedEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
+	if (currentElitePink)
+		currentElitePink.update(
+			Math.max(100, ElitePink.config.shotCooldownBase - eliteAttackCooldownReduction) / eliteAttackRate,
 			deltaTime
 		);
-	if (
-		difficultySettings.elites.green &&
-		!currentEliteGreenEnemy &&
-		currentTime - lastEliteGreenSpawnTime > EliteGreenEnemy.spawnInterval / eliteAttackRate
-	) {
-		currentEliteGreenEnemy = new EliteGreenEnemy(difficultySettings);
-		lastEliteGreenSpawnTime = currentTime;
-	}
-	if (currentEliteGreenEnemy)
-		currentEliteGreenEnemy.update(
-			getAdjustedValue(EliteGreenEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
-			deltaTime
-		);
-	if (
-		difficultySettings.elites.blue &&
-		!currentEliteBlueEnemy &&
-		currentTime - lastEliteBlueSpawnTime > EliteBlueEnemy.spawnInterval / eliteAttackRate
-	) {
-		currentEliteBlueEnemy = new EliteBlueEnemy(difficultySettings);
-		lastEliteBlueSpawnTime = currentTime;
-	}
+	if (currentEliteGreenEnemy) currentEliteGreenEnemy.update(EliteGreenEnemy.config.shotCooldownBase, deltaTime);
 	if (currentEliteBlueEnemy)
 		currentEliteBlueEnemy.update(
-			getAdjustedValue(EliteBlueEnemy.config.shotCooldownBase, newDifficultyLevel) / eliteAttackRate,
-			deltaTime
+			Math.max(100, EliteBlueEnemy.config.shotCooldownBase - eliteAttackCooldownReduction) / eliteAttackRate,
+			deltaTime,
+			newDifficultyLevel
 		);
+
+	if (currentElitePurple && currentElitePurple.y > SCREEN_HEIGHT) currentElitePurple = null;
+	if (currentEliteOrange && currentEliteOrange.y > SCREEN_HEIGHT) currentEliteOrange = null;
+	if (currentElitePink && currentElitePink.y > SCREEN_HEIGHT) currentElitePink = null;
+	if (currentEliteGreenEnemy && currentEliteGreenEnemy.y > SCREEN_HEIGHT) currentEliteGreenEnemy = null;
+	if (currentEliteBlueEnemy && currentEliteBlueEnemy.y > SCREEN_HEIGHT) currentEliteBlueEnemy = null;
 
 	const playerRect = { x: player.x, y: player.y, width: player.width, height: player.height };
 	const eliteEnemies = [
-		currentEliteEnemy,
-		currentBarrageEnemy,
-		currentEliteRedEnemy,
+		currentElitePurple,
+		currentEliteOrange,
+		currentElitePink,
 		currentEliteGreenEnemy,
 		currentEliteBlueEnemy,
 	];
+
 	for (let i = bullets.length - 1; i >= 0; i--) {
 		const bullet = bullets[i];
 		let bulletRemoved = false;
+
 		for (let j = enemies.length - 1; j >= 0; j--) {
 			if (checkCollision(bullet, enemies[j])) {
-				if (!player.pierceActive) {
-					bullets.splice(i, 1);
-					bulletRemoved = true;
-				}
 				enemies.splice(j, 1);
 				score += 10;
-				if (bulletRemoved) break;
+				bullets.splice(i, 1);
+				bulletRemoved = true;
+				break;
 			}
 		}
 		if (bulletRemoved) continue;
+
 		for (let j = freeRoamEnemies.length - 1; j >= 0; j--) {
 			if (checkCollision(bullet, freeRoamEnemies[j])) {
-				if (!player.pierceActive) {
-					bullets.splice(i, 1);
-					bulletRemoved = true;
-				}
 				freeRoamEnemies.splice(j, 1);
 				score += 15;
-				if (bulletRemoved) break;
+				bullets.splice(i, 1);
+				bulletRemoved = true;
+				break;
 			}
 		}
 		if (bulletRemoved) continue;
-		if (currentEliteEnemy) {
-			for (let k = currentEliteEnemy.bullets.length - 1; k >= 0; k--) {
-				const homingBullet = currentEliteEnemy.bullets[k];
-				if (checkCollision(bullet, homingBullet)) {
-					currentEliteEnemy.bullets.splice(k, 1);
-					if (!player.pierceActive) {
-						bullets.splice(i, 1);
-						bulletRemoved = true;
-					}
-					score += 1;
-					if (bulletRemoved) break;
-				}
-			}
-		}
-		if (bulletRemoved) continue;
+
 		for (const elite of eliteEnemies) {
 			if (elite && elite.isActive && checkCollision(bullet, elite)) {
-				if (!player.pierceActive) {
+				elite.takeDamage(10);
+				bullets.splice(i, 1);
+				bulletRemoved = true;
+				break;
+			}
+		}
+		if (bulletRemoved) continue;
+
+		if (currentElitePurple) {
+			for (let k = currentElitePurple.bullets.length - 1; k >= 0; k--) {
+				if (checkCollision(bullet, currentElitePurple.bullets[k])) {
+					currentElitePurple.bullets.splice(k, 1);
+					score += 1;
 					bullets.splice(i, 1);
 					bulletRemoved = true;
+					break;
 				}
-				if (elite.takeDamage(10)) {
-					if (elite === currentEliteEnemy) currentEliteEnemy = null;
-					if (elite === currentBarrageEnemy) currentBarrageEnemy = null;
-					if (elite === currentEliteRedEnemy) currentEliteRedEnemy = null;
-					if (elite === currentEliteGreenEnemy) currentEliteGreenEnemy = null;
-					if (elite === currentEliteBlueEnemy) currentEliteBlueEnemy = null;
-				}
-				if (bulletRemoved) break;
 			}
 		}
 		if (bulletRemoved) continue;
-		if (currentBarrageEnemy) {
-			for (let j = currentBarrageEnemy.barrageOrbs.length - 1; j >= 0; j--) {
-				const orb = currentBarrageEnemy.barrageOrbs[j];
+
+		if (currentEliteOrange) {
+			for (let j = currentEliteOrange.barrageOrbs.length - 1; j >= 0; j--) {
+				const orb = currentEliteOrange.barrageOrbs[j];
 				if (checkCollision(bullet, orb)) {
-					if (!player.pierceActive) {
-						bullets.splice(i, 1);
-						bulletRemoved = true;
-					}
 					if (orb.takeDamage(1)) {
-						currentBarrageEnemy.generateExplosionBullets(orb.x + orb.width / 2, orb.y + orb.height / 2);
-						currentBarrageEnemy.barrageOrbs.splice(j, 1);
+						currentEliteOrange.generateExplosionBullets(orb.x + orb.width / 2, orb.y + orb.height / 2);
+						currentEliteOrange.barrageOrbs.splice(j, 1);
 						score += 20;
 					}
-					if (bulletRemoved) break;
+					bullets.splice(i, 1);
+					bulletRemoved = true;
+					break;
 				}
 			}
 		}
 		if (bulletRemoved) continue;
+
 		if (currentEliteGreenEnemy) {
 			for (let j = currentEliteGreenEnemy.bullets.length - 1; j >= 0; j--) {
 				const wall = currentEliteGreenEnemy.bullets[j];
 				if (checkCollision(bullet, wall)) {
-					if (!player.pierceActive) {
-						bullets.splice(i, 1);
-						bulletRemoved = true;
-					}
 					if (wall.takeDamage(1)) {
-						healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 15));
+						healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 30));
 						currentEliteGreenEnemy.bullets.splice(j, 1);
 					}
-					if (bulletRemoved) break;
+					bullets.splice(i, 1);
+					bulletRemoved = true;
+					break;
 				}
+			}
+		}
+	}
+
+	for (let i = playerHomingBullets.length - 1; i >= 0; i--) {
+		const pBullet = playerHomingBullets[i];
+		for (const elite of eliteEnemies) {
+			if (elite && elite.isActive && checkCollision(pBullet, elite)) {
+				elite.takeDamage(pBullet.damage);
+				playerHomingBullets.splice(i, 1);
+				break;
 			}
 		}
 	}
@@ -1212,9 +1430,9 @@ function update(deltaTime) {
 					} else if (enemy instanceof FreeRoamEnemy) {
 						freeRoamEnemies = freeRoamEnemies.filter((e) => e !== enemy);
 					} else if (enemy instanceof BaseEliteEnemy) {
-						if (enemy === currentEliteEnemy) currentEliteEnemy = null;
-						if (enemy === currentBarrageEnemy) currentBarrageEnemy = null;
-						if (enemy === currentEliteRedEnemy) currentEliteRedEnemy = null;
+						if (enemy === currentElitePurple) currentElitePurple = null;
+						if (enemy === currentEliteOrange) currentEliteOrange = null;
+						if (enemy === currentElitePink) currentElitePink = null;
 						if (enemy === currentEliteGreenEnemy) currentEliteGreenEnemy = null;
 						if (enemy === currentEliteBlueEnemy) currentEliteBlueEnemy = null;
 					}
@@ -1226,6 +1444,8 @@ function update(deltaTime) {
 	if (currentTime - player.lastHitTime > player.invincibilityDuration) {
 		let damageTaken = 0;
 		let hitSource = null;
+		let isEliteAttack = false;
+
 		const checkPlayerCollision = (targets, damage, removeOnHit = true) => {
 			for (let i = targets.length - 1; i >= 0; i--) {
 				if (checkCollision(playerRect, targets[i])) {
@@ -1237,38 +1457,61 @@ function update(deltaTime) {
 			}
 			return false;
 		};
+
+		if (currentEliteBlueEnemy) {
+			for (const laser of currentEliteBlueEnemy.activeLasers) {
+				if (laser.checkCollisionWithPlayer(playerRect)) {
+					damageTaken += laser.damage;
+					isEliteAttack = true;
+					break;
+				}
+			}
+		}
+
 		let collisionFound = false;
 		for (const fr_enemy of freeRoamEnemies) {
 			if (checkPlayerCollision(fr_enemy.bullets, 0)) {
 				collisionFound = true;
+				isEliteAttack = false;
 				break;
 			}
 		}
-		if (!collisionFound) {
+
+		if (!collisionFound && damageTaken === 0) {
 			if (checkPlayerCollision(enemies, 20)) {
+				isEliteAttack = false;
 			} else if (checkPlayerCollision(freeRoamEnemies, 20)) {
+				isEliteAttack = false;
 			} else if (checkPlayerCollision(explosionBullets, 0)) {
-			} else if (currentEliteEnemy && checkPlayerCollision(currentEliteEnemy.bullets, 0)) {
-			} else if (currentEliteRedEnemy && checkPlayerCollision(currentEliteRedEnemy.bullets, 0)) {
-			} else if (currentBarrageEnemy && checkPlayerCollision(currentBarrageEnemy.barrageOrbs, 15, false)) {
-				currentBarrageEnemy.generateExplosionBullets(
+				isEliteAttack = true;
+			} else if (currentElitePurple && checkPlayerCollision(currentElitePurple.bullets, 0)) {
+				isEliteAttack = true;
+			} else if (currentElitePink && checkPlayerCollision(currentElitePink.bullets, 0)) {
+				isEliteAttack = true;
+			} else if (currentEliteOrange && checkPlayerCollision(currentEliteOrange.barrageOrbs, 15, false)) {
+				isEliteAttack = true;
+				currentEliteOrange.generateExplosionBullets(
 					hitSource.x + hitSource.width / 2,
 					hitSource.y + hitSource.height / 2
 				);
-				currentBarrageEnemy.barrageOrbs.splice(currentBarrageEnemy.barrageOrbs.indexOf(hitSource), 1);
+				currentEliteOrange.barrageOrbs.splice(currentEliteOrange.barrageOrbs.indexOf(hitSource), 1);
 			} else {
 				for (const item of eliteEnemies) {
 					if (item && item.isActive && checkCollision(playerRect, item)) {
 						damageTaken += 30;
+						isEliteAttack = true;
 						break;
 					}
 				}
 			}
 		}
+
 		if (damageTaken > 0) {
 			if (player.shields > 0) {
-				player.shields--;
-				healthOrbs.push(new HealthOrb(player.x + player.width / 2, player.y + player.height / 2, 10, 15));
+				if (isEliteAttack) {
+					player.shields--;
+					healthOrbs.push(new HealthOrb(player.x + player.width / 2, player.y + player.height / 2, 10, 30));
+				}
 			} else {
 				player.hp -= damageTaken;
 				player.lastHitTime = currentTime;
@@ -1292,27 +1535,41 @@ function update(deltaTime) {
 		if (checkCollision(playerRect, orb)) {
 			switch (orb.type) {
 				case "spread":
-					player.shotsActive = true;
-					player.shotsStartTime = currentTime;
+					player.spreadLevel = Math.min(3, player.spreadLevel + 1);
+					player.spreadStartTime = currentTime;
 					break;
-				case "pierce":
-					player.pierceActive = true;
-					player.pierceStartTime = currentTime;
+				case "rateUp":
+					player.rateUpLevel = Math.min(3, player.rateUpLevel + 1);
+					player.rateUpStartTime = currentTime;
 					break;
 				case "shield":
-					player.shields = 3;
+					player.shieldLevel = Math.min(3, player.shieldLevel + 1);
+					const shieldCounts = [0, 3, 4, 5];
+					player.shields = shieldCounts[player.shieldLevel];
 					break;
 				case "range":
-					player.rangeActive = true;
-					player.rangeStartTime = currentTime;
-					player.beamCharges = 3;
+					if (player.rangeLevel === 0) {
+						// 初めて取得した場合：3回分付与
+						player.beamCharges = 3;
+					} else {
+						// 2回目以降の取得：2回分追加
+						player.beamCharges += 2;
+					}
+					player.rangeLevel = Math.min(3, player.rangeLevel + 1); // レベルは3まで上昇
+					player.rangeStartTime = currentTime; // 効果時間はリセット
 					player.lastBeamTime = currentTime;
+					break;
+				case "homing":
+					player.homingLevel = Math.min(3, player.homingLevel + 1);
+					player.homingStartTime = currentTime;
 					break;
 			}
 			buffOrbs.splice(i, 1);
 		}
 	}
 
+	bullets = bullets.filter((b) => b.y > -b.height);
+	playerHomingBullets = playerHomingBullets.filter((b) => !b.isExpired);
 	enemies = enemies.filter((e) => e.y < SCREEN_HEIGHT);
 	freeRoamEnemies = freeRoamEnemies.filter(
 		(e) => e.y < SCREEN_HEIGHT + 30 && e.y > -30 && e.x > -30 && e.x < SCREEN_WIDTH + 30
@@ -1322,9 +1579,9 @@ function update(deltaTime) {
 	);
 	healthOrbs = healthOrbs.filter((o) => o.y < SCREEN_HEIGHT);
 	buffOrbs = buffOrbs.filter((o) => o.y < SCREEN_HEIGHT);
-	if (currentEliteEnemy && !currentEliteEnemy.isActive) currentEliteEnemy = null;
-	if (currentBarrageEnemy && !currentBarrageEnemy.isActive) currentBarrageEnemy = null;
-	if (currentEliteRedEnemy && !currentEliteRedEnemy.isActive) currentEliteRedEnemy = null;
+	if (currentElitePurple && !currentElitePurple.isActive) currentElitePurple = null;
+	if (currentEliteOrange && !currentEliteOrange.isActive) currentEliteOrange = null;
+	if (currentElitePink && !currentElitePink.isActive) currentElitePink = null;
 	if (currentEliteGreenEnemy && !currentEliteGreenEnemy.isActive) currentEliteGreenEnemy = null;
 	if (currentEliteBlueEnemy && !currentEliteBlueEnemy.isActive) currentEliteBlueEnemy = null;
 	if (player.hp <= 0) {
@@ -1344,14 +1601,50 @@ function draw() {
 		ctx.font = `24px sans-serif`;
 		ctx.fillText(`Final Score: ${score}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 		ctx.font = `32px sans-serif`;
-		ctx.fillText("Press 'R' or Tap to Restart", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
+		ctx.fillText("Press 'R' or Tap 3 Times to Restart", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50);
 		return;
 	}
 	const currentTime = performance.now();
+
+	if (player.rateUpLevel > 0) {
+		const centerX = player.x + player.width / 2;
+		const centerY = player.y + player.height / 2;
+
+		// 時間に応じてオーラのサイズと透明度を変化させる
+		const pulse = Math.abs(Math.sin(currentTime / 200)); // 0から1の範囲で滑らかに変化する値
+		const radius = player.width / 2 + 5 + pulse * 5; // 半径が滑らかに変化
+		const alpha = 0.2 + pulse * 0.4; // 透明度が滑らかに変化
+
+		ctx.fillStyle = `rgba(255, 105, 180, ${alpha})`; // COLORS.PINKのRGBA版
+		ctx.beginPath();
+		ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+		ctx.fill();
+	}
 	if (!(currentTime - player.lastHitTime < player.invincibilityDuration && Math.floor(currentTime / 100) % 2 === 0)) {
 		ctx.fillStyle = COLORS.WHITE;
 		ctx.fillRect(player.x, player.y, player.width, player.height);
 	}
+
+	if (player.homingLevel > 0) {
+		const centerX = player.x + player.width / 2;
+		const centerY = player.y + player.height / 2;
+		for (let i = 0; i < player.homingLevel; i++) {
+			const angleOffset = (i * (2 * Math.PI)) / player.homingLevel;
+			const angleRad = (player.shieldOffsetAngle * Math.PI) / 180 + angleOffset;
+			const dist = player.width / 2 + 40;
+			const pX = centerX + dist * Math.cos(angleRad);
+			const pY = centerY + dist * Math.sin(angleRad);
+			const squareSize = 20;
+
+			ctx.fillStyle = COLORS.PURPLE;
+			ctx.save();
+			ctx.translate(pX, pY);
+			ctx.rotate(angleRad + Math.PI / 4);
+			ctx.fillRect(-squareSize / 2, -squareSize / 2, squareSize, squareSize);
+			ctx.restore();
+		}
+	}
+
 	if (player.shields > 0) {
 		player.shieldOffsetAngle = (player.shieldOffsetAngle + 450 * (deltaTime || 0)) % 360;
 		const shieldCenterX = player.x + player.width / 2;
@@ -1388,14 +1681,15 @@ function draw() {
 	activeBeams.forEach((b) => b.draw());
 
 	bullets.forEach((b) => b.draw());
+	playerHomingBullets.forEach((b) => b.draw());
 	enemies.forEach((e) => e.draw());
 	freeRoamEnemies.forEach((e) => e.draw());
 	explosionBullets.forEach((b) => b.draw());
 	healthOrbs.forEach((o) => o.draw());
 	buffOrbs.forEach((o) => o.draw());
-	if (currentEliteEnemy) currentEliteEnemy.draw();
-	if (currentBarrageEnemy) currentBarrageEnemy.draw();
-	if (currentEliteRedEnemy) currentEliteRedEnemy.draw();
+	if (currentElitePurple) currentElitePurple.draw();
+	if (currentEliteOrange) currentEliteOrange.draw();
+	if (currentElitePink) currentElitePink.draw();
 	if (currentEliteGreenEnemy) currentEliteGreenEnemy.draw();
 	if (currentEliteBlueEnemy) currentEliteBlueEnemy.draw();
 
@@ -1407,13 +1701,12 @@ function draw() {
 			ctx.font = `bold ${size}px sans-serif`;
 			ctx.fillStyle = `rgba(255, 224, 102, ${alpha})`;
 			ctx.textAlign = "center";
-			ctx.fillText("DIFFICULTY UP!!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+			ctx.fillText("LEVEL UP!!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 		} else {
 			difficultyUpAnimation.active = false;
 		}
 	}
 
-	// HP Bar
 	const hpBarX = 20;
 	const hpBarY = 140;
 	const hpBarWidth = 30;
@@ -1445,19 +1738,18 @@ function draw() {
 	ctx.textAlign = "center";
 	ctx.fillText(`${Math.round(player.hp)}`, hpBarX + hpBarWidth / 2, hpBarY - 15);
 
-	// Buff Icons
 	const buffIconSize = 40;
 	let buffIconY = 20;
 	const buffIconX = SCREEN_WIDTH - buffIconSize - 20;
-	const drawBuffIcon = (type, value) => {
+	const drawBuffIcon = (type, value, level = 0) => {
 		let color = COLORS.WHITE;
 		let text = "";
 		switch (type) {
 			case "spread":
-				color = COLORS.PURPLE;
+				color = COLORS.ORANGE;
 				break;
-			case "pierce":
-				color = COLORS.CRIMSON;
+			case "rateUp":
+				color = COLORS.PINK;
 				break;
 			case "range":
 				color = COLORS.BLUE;
@@ -1465,6 +1757,9 @@ function draw() {
 			case "shield":
 				color = COLORS.LIGHT_BLUE;
 				text = value;
+				break;
+			case "homing":
+				color = COLORS.PURPLE;
 				break;
 		}
 		ctx.fillStyle = color;
@@ -1494,39 +1789,45 @@ function draw() {
 		ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
 		ctx.stroke();
 
+		ctx.fillStyle = COLORS.WHITE;
+		ctx.font = "bold 24px sans-serif";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+
 		if (text) {
-			ctx.fillStyle = COLORS.WHITE;
-			ctx.font = "bold 24px sans-serif";
-			ctx.textAlign = "center";
-			ctx.textBaseline = "middle";
 			ctx.fillText(text, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
+		} else if (level > 0) {
+			ctx.fillText(level, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
 		}
 
 		buffIconY += buffIconSize + 10;
 	};
 
-	if (player.shotsActive) {
-		const remaining = 1 - (currentTime - player.shotsStartTime) / player.shotsDuration;
-		drawBuffIcon("spread", remaining);
+	if (player.spreadLevel > 0) {
+		const remaining = 1 - (currentTime - player.spreadStartTime) / player.spreadDuration;
+		drawBuffIcon("spread", remaining, player.spreadLevel);
 	}
 	if (player.shields > 0) {
 		drawBuffIcon("shield", player.shields);
 	}
-	if (player.pierceActive) {
-		const remaining = 1 - (currentTime - player.pierceStartTime) / player.pierceDuration;
-		drawBuffIcon("pierce", remaining);
+	if (player.rateUpLevel > 0) {
+		const remaining = 1 - (currentTime - player.rateUpStartTime) / player.rateUpDuration;
+		drawBuffIcon("rateUp", remaining, player.rateUpLevel);
 	}
-	if (player.rangeActive) {
+	if (player.rangeLevel > 0) {
 		const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
-		drawBuffIcon("range", remaining);
+		drawBuffIcon("range", remaining, player.rangeLevel);
+	}
+	if (player.homingLevel > 0) {
+		const remaining = 1 - (currentTime - player.homingStartTime) / player.homingDuration;
+		drawBuffIcon("homing", remaining, player.homingLevel);
 	}
 
-	// Score and Difficulty
 	ctx.fillStyle = COLORS.WHITE;
 	ctx.font = `24px sans-serif`;
 	ctx.textAlign = "left";
 	ctx.fillText(`Score: ${score}`, 20, 40);
-	ctx.fillText(`Difficulty: ${currentDifficultyLevel}`, 20, 70);
+	ctx.fillText(`Level: ${currentDifficultyLevel}`, 20, 70);
 }
 
 // --- メインループ ---
