@@ -52,8 +52,6 @@ const MAX_ACTIVE_ELITES = 8;
 let isBossBattleActive = false;
 let currentBoss = null;
 let difficultyUpAnimation = { active: false, alpha: 0, startTime: 0 };
-let gameOverTapCount = 0;
-let gameOverTapCount = 0;
 
 // --- プレイヤー設定 ---
 const player = {
@@ -153,51 +151,65 @@ class PlayerHomingBullet {
 		this.angle = -Math.PI / 2;
 		this.damage = 15 * player.attackMultiplier;
 		this.isExpired = false;
-		// this.noTargetTime = 0; // 削除またはコメントアウト
-		// this.noTargetLifetime = 500; // 削除またはコメントアウト
+		this.spawnX = x; // 発射時のX座標
+		this.spawnY = y; // 発射時のY座標
+		this.maxRange = SCREEN_HEIGHT * 0.75; // 通常時の最大射程
+		this.currentDistance = 0; // 現在の移動距離
+
+		// ボス戦中かどうかのフラグを受け取る、またはグローバル変数から参照
+		this.isBossBattleActive = isBossBattleActive;
 	}
 
 	update(deltaTime) {
-		// ターゲットが存在しない、またはターゲットが非アクティブになった場合
-		// ただし、ターゲットオブジェクト自体が存在するかどうかで判断する
-		// 通常の敵にはisActiveがないので、`this.target && this.target.isActive` だと
-		// 通常の敵をターゲットにしたときにすぐにターゲットロストと判断されてしまうため、
-		// ターゲットが `null` または `undefined` の場合のみ考慮する
+		const prevX = this.x;
+		const prevY = this.y;
+
+		// まず移動処理（ターゲット追尾または直進）
 		if (!this.target || (this.target.isActive !== undefined && !this.target.isActive)) {
-			// ターゲットがいない、またはエリート/ボスで非アクティブになった場合
-			// この場合、ホーミング弾は直進して画面外に出るようにする
+			// ボス戦中の場合、ターゲットを見失ったらすぐに消滅
+			if (this.isBossBattleActive) {
+				this.isExpired = true;
+				return;
+			}
+
+			// ターゲットがいない場合は直進
 			this.y += Math.sin(this.angle) * this.speed * deltaTime;
 			this.x += Math.cos(this.angle) * this.speed * deltaTime;
+		} else {
+			// ターゲットが存在し、かつアクティブな場合は通常通り追尾
+			// ここで this.target が確実に存在することを確認してからプロパティにアクセス
+			const targetCenterX = this.target.x + this.target.width / 2;
+			const targetCenterY = this.target.y + this.target.height / 2;
 
-			// 画面外に出たら消滅
-			if (
-				this.y < -this.height ||
-				this.y > SCREEN_HEIGHT + this.height ||
-				this.x < -this.width ||
-				this.x > SCREEN_WIDTH + this.width
-			) {
-				this.isExpired = true;
-			}
-			return; // ターゲットがいない場合はこれ以上処理しない
+			const targetAngle = Math.atan2(targetCenterY - this.y, targetCenterX - this.x);
+			let angleDiff = targetAngle - this.angle;
+			while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+			while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+
+			const turnAmount = this.turnSpeed * deltaTime;
+			this.angle += Math.max(-turnAmount, Math.min(turnAmount, angleDiff));
+
+			this.x += Math.cos(this.angle) * this.speed * deltaTime;
+			this.y += Math.sin(this.angle) * this.speed * deltaTime;
 		}
 
-		// ターゲットが存在し、かつアクティブな場合は通常通り追尾
-		const targetAngle = Math.atan2(
-			this.target.y + this.target.height / 2 - this.y,
-			this.target.x + this.target.width / 2 - this.x
-		);
-		let angleDiff = targetAngle - this.angle;
-		while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-		while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+		// 移動距離を更新
+		const movedDistance = Math.sqrt(Math.pow(this.x - prevX, 2) + Math.pow(this.y - prevY, 2));
+		this.currentDistance += movedDistance;
 
-		const turnAmount = this.turnSpeed * deltaTime;
-		this.angle += Math.max(-turnAmount, Math.min(turnAmount, angleDiff));
+		// 射程距離を超えたら消滅
+		if (this.currentDistance > this.maxRange) {
+			this.isExpired = true;
+			return;
+		}
 
-		this.x += Math.cos(this.angle) * this.speed * deltaTime;
-		this.y += Math.sin(this.angle) * this.speed * deltaTime;
-
-		// 画面外に出たら消滅 (これは元々あったロジックですが念のため)
-		if (this.y < -this.height) {
+		// 画面外に出たら消滅（念のため残す）
+		if (
+			this.y < -this.height ||
+			this.y > SCREEN_HEIGHT + this.height ||
+			this.x < -this.width ||
+			this.x > SCREEN_WIDTH + this.width
+		) {
 			this.isExpired = true;
 		}
 	}
@@ -338,7 +350,7 @@ class GenericEnemyBullet {
 }
 
 class HomingBullet {
-	constructor(x, y, angle, speed, turnSpeed, color, damage, lifetime) {
+	constructor(x, y, angle, speed, turnSpeed, color, damage, lifetime, isInvulnerable = false) {
 		this.x = x;
 		this.y = y;
 		this.width = 20;
@@ -352,6 +364,7 @@ class HomingBullet {
 		this.lifetime = lifetime;
 		this.isExpired = false;
 		this.hp = 1;
+		this.isInvulnerable = isInvulnerable;
 	}
 	update(deltaTime) {
 		if (performance.now() - this.spawnTime > this.lifetime) {
@@ -374,6 +387,10 @@ class HomingBullet {
 		ctx.fill();
 	}
 	takeDamage(bullet) {
+		if (this.isInvulnerable) {
+			// 迎撃不可の場合、ダメージを受けない
+			return false;
+		}
 		this.hp -= bullet.damage;
 		if (this.hp <= 0) {
 			return true;
@@ -407,7 +424,7 @@ class Beam {
 
 class EnemyLaser {
 	constructor(sourceElite, targetX, targetY, lockOnTime, thickness = 30) {
-		// thickness にデフォルト値を追加
+		// thicknessにデフォルト値を追加
 		this.sourceElite = sourceElite;
 		this.target = { x: targetX + player.width / 2, y: targetY + player.height / 2 };
 		this.damage = 30;
@@ -560,9 +577,13 @@ class ElitePurple extends BaseEliteEnemy {
 		const damage = 20;
 		const spreadAngle = (20 * Math.PI) / 180;
 		const lifetime = this.difficulty.homingLifetime;
+		const isInvulnerable = false;
 		for (let i = -2; i <= 2; i++) {
 			const angle = Math.PI / 2 + i * spreadAngle;
-			this.bullets.push(new HomingBullet(bulletX, bulletY, angle, speed, turnSpeed, COLORS.YELLOW, damage, lifetime));
+			// isInvulnerable をコンストラクタに渡す
+			this.bullets.push(
+				new HomingBullet(bulletX, bulletY, angle, speed, turnSpeed, COLORS.YELLOW, damage, lifetime, isInvulnerable)
+			);
 		}
 	}
 	draw() {
@@ -577,8 +598,6 @@ class BarrageOrb {
 		this.height = 35;
 		this.x = x;
 		this.y = y;
-		this.hp = 3;
-		this.maxHp = 3;
 		this.exploded = false;
 		this.explosionCooldown = 2000;
 		this.spawnTime = performance.now();
@@ -589,14 +608,20 @@ class BarrageOrb {
 	update(deltaTime) {
 		this.x += this.vx * deltaTime;
 		this.y += this.vy * deltaTime;
+		if (!this.exploded && performance.now() - this.spawnTime > this.explosionCooldown) {
+			// 炸裂時間になったら
+			this.exploded = true;
+			return true; // 爆発を通知
+		}
+		// 画面外に出たら消滅
 		if (
 			this.y > SCREEN_HEIGHT + this.height ||
 			this.y < -this.height ||
 			this.x < -this.width ||
-			this.x > SCREEN_WIDTH + this.width ||
-			performance.now() - this.spawnTime > this.explosionCooldown
+			this.x > SCREEN_WIDTH + this.width
 		) {
 			if (!this.exploded) {
+				// 炸裂せずに画面外に出た場合も爆発を通知
 				this.exploded = true;
 				return true;
 			}
@@ -605,21 +630,11 @@ class BarrageOrb {
 	}
 	draw() {
 		ctx.fillStyle = COLORS.ORANGE;
-		ctx.fillRect(this.x, this.y, this.width, this.height);
-		const hpBarHeight = Math.max(2, Math.round(this.width * 0.2));
-		const hpBarWidth = this.width;
-		const hpRatio = this.hp > 0 ? this.hp / this.maxHp : 0;
-		ctx.fillStyle = COLORS.RED;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth, hpBarHeight);
-		ctx.fillStyle = COLORS.GREEN;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 2, hpBarWidth * hpRatio, hpBarHeight);
+		ctx.beginPath(); // 円を描画するためのパスを開始
+		ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2); // 円を描画
+		ctx.fill();
 	}
 	takeDamage(bullet) {
-		this.hp -= bullet.damage;
-		score += 2;
-		if (this.hp <= 0) {
-			return true;
-		}
 		return false;
 	}
 }
@@ -699,7 +714,7 @@ class ElitePink extends BaseEliteEnemy {
 		targetY: 150,
 		hp: 200,
 		maxHp: 200,
-		shotCooldownBase: 500,
+		shotCooldownBase: 800,
 		color: COLORS.PINK,
 		onDefeat: (self) => {
 			const dropX = self.x + self.width / 2;
@@ -727,7 +742,7 @@ class ElitePink extends BaseEliteEnemy {
 			player.x + player.width / 2 - (this.x + this.width / 2)
 		);
 		const spreadAngle = (15 * Math.PI) / 180;
-		const speed = 9 * 60 * this.difficulty.bulletSpeedMultiplier;
+		const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
 		for (let i = -1; i <= 1; i++) {
 			const angle = baseAngle + i * spreadAngle;
 			const bulletX = this.x + this.width / 2;
@@ -950,6 +965,7 @@ class BossEnemy extends BaseEliteEnemy {
 				this.bullets.splice(index, 1);
 			}
 		});
+		this.bullets = this.bullets.filter((b) => !b.isExpired);
 	}
 
 	// 【変更】BarrageOrbの爆発処理を追加
@@ -1002,11 +1018,19 @@ class BossEnemy extends BaseEliteEnemy {
 		const bulletX = this.x + this.width / 2;
 		const bulletY = this.y + this.height;
 		const speed = 10 * 60 * this.difficulty.bulletSpeedMultiplier;
-		for (let i = -4; i <= 4; i++) {
-			const angle = Math.PI / 2 + (i * 15 * Math.PI) / 180;
-			const targetX = bulletX + Math.cos(angle) * 100;
-			const targetY = bulletY + Math.sin(angle) * 100;
-			this.bullets.push(new GenericEnemyBullet(bulletX, bulletY, targetX, targetY, 15, 15, speed, COLORS.PINK, 15));
+		const numWaves = 3;
+		const waveDelay = 200;
+		const baseAngleToPlayer = Math.atan2(player.y + player.height / 2 - bulletY, player.x + player.width / 2 - bulletX);
+		for (let wave = 0; wave < numWaves; wave++) {
+			setTimeout(() => {
+				for (let i = -4; i <= 4; i++) {
+					// 基準角度をプレイヤーの方向 + 拡散角度に変更
+					const angle = baseAngleToPlayer + (i * 15 * Math.PI) / 180;
+					const targetX = bulletX + Math.cos(angle) * 100;
+					const targetY = bulletY + Math.sin(angle) * 100;
+					this.bullets.push(new GenericEnemyBullet(bulletX, bulletY, targetX, targetY, 15, 15, speed, COLORS.PINK, 15));
+				}
+			}, wave * waveDelay); // 遅延を適用
 		}
 	}
 
@@ -1016,16 +1040,19 @@ class BossEnemy extends BaseEliteEnemy {
 		const bulletY = this.y + this.height;
 		const speed = 7 * 60 * this.difficulty.bulletSpeedMultiplier;
 		const lifetime = this.difficulty.homingLifetime;
-		for (let i = 0; i < 5; i++) {
+		const numHomingBullets = 15;
+		const isInvulnerable = true;
+		for (let i = 0; i < numHomingBullets; i++) {
 			const angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
-			this.bullets.push(new HomingBullet(bulletX, bulletY, angle, speed, 1.5, COLORS.YELLOW, 20, lifetime));
+			this.bullets.push(
+				new HomingBullet(bulletX, bulletY, angle, speed, 1.5, COLORS.YELLOW, 20, lifetime, isInvulnerable)
+			);
 		}
 	}
 
 	// 青エリートのようなレーザー攻撃
 	shootLaser() {
-		// ボス専用の太さを指定
-		const bossLaserThickness = 60; // 例として60
+		const bossLaserThickness = 60;
 		this.bullets.push(new EnemyLaser(this, player.x, player.y, 800, bossLaserThickness));
 	}
 
@@ -1690,15 +1717,17 @@ function update(deltaTime) {
 		if (currentBoss) {
 			for (let k = currentBoss.bullets.length - 1; k >= 0; k--) {
 				const bossBullet = currentBoss.bullets[k];
-				if (checkCollision(bullet, bossBullet)) {
-					if (typeof bossBullet.takeDamage === "function") {
-						if (bossBullet.takeDamage(bullet)) {
+				// BarrageOrbはtakeDamageを持たないので、if文で弾く
+				if (!(bossBullet instanceof BarrageOrb) && typeof bossBullet.takeDamage === "function") {
+					// BarrageOrbでない場合のみダメージ判定
+					if (checkCollision(pBullet, bossBullet)) {
+						if (bossBullet.takeDamage(pBullet)) {
 							currentBoss.bullets.splice(k, 1);
 						}
+						playerHomingBullets.splice(i, 1);
+						bulletRemoved = true;
+						break;
 					}
-					bullets.splice(i, 1);
-					bulletRemoved = true;
-					break;
 				}
 			}
 		}
