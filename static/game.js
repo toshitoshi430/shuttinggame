@@ -575,8 +575,8 @@ class ElitePurple extends BaseEliteEnemy {
 
 class BarrageOrb {
 	constructor(x, y, angle) {
-		this.width = 35;
-		this.height = 35;
+		this.width = 20;
+		this.height = 15;
 		this.x = x;
 		this.y = y;
 		// this.hp = 3; // 削除
@@ -2283,7 +2283,8 @@ function draw() {
 	const buffIconX = SCREEN_WIDTH - buffIconSize - 20;
 	const drawBuffIcon = (type, value, level = 0) => {
 		let color = COLORS.WHITE;
-		let text = "";
+		let text = ""; // text 変数を初期化
+
 		switch (type) {
 			case "spread":
 				color = COLORS.ORANGE;
@@ -2293,6 +2294,7 @@ function draw() {
 				break;
 			case "range":
 				color = COLORS.BLUE;
+				text = value; // ここで value (ビームチャージ数) を text に設定
 				break;
 			case "shield":
 				color = COLORS.LIGHT_BLUE;
@@ -2302,13 +2304,15 @@ function draw() {
 				color = COLORS.PURPLE;
 				break;
 		}
+
 		ctx.fillStyle = color;
 		ctx.beginPath();
 		ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
 		ctx.fill();
 
-		if (type !== "shield") {
-			const remainingPercent = value;
+		// ★ 修正: type が "shield" または "range" でない場合に残り時間ゲージを描画
+		if (type !== "shield" && type !== "range") {
+			const remainingPercent = value; // spread, rateUp, homing の remainingPercent
 			ctx.fillStyle = "rgba(0,0,0,0.5)";
 			ctx.beginPath();
 			ctx.moveTo(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2);
@@ -2335,8 +2339,10 @@ function draw() {
 		ctx.textBaseline = "middle";
 
 		if (text) {
+			// text が設定されている場合 (shield, range)
 			ctx.fillText(text, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
 		} else if (level > 0) {
+			// level が設定されている場合 (spread, rateUp, homing)
 			ctx.fillText(level, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
 		}
 
@@ -2354,9 +2360,8 @@ function draw() {
 		const remaining = 1 - (currentTime - player.rateUpStartTime) / player.rateUpDuration;
 		drawBuffIcon("rateUp", remaining, player.rateUpLevel);
 	}
-	if (player.rangeLevel > 0) {
-		const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
-		drawBuffIcon("range", remaining, player.rangeLevel);
+	if (player.rangeLevel > 0 && player.beamCharges > 0) {
+		drawBuffIcon("range", player.beamCharges);
 	}
 	if (player.homingLevel > 0) {
 		const remaining = 1 - (currentTime - player.homingStartTime) / player.homingDuration;
