@@ -887,7 +887,7 @@ class BossEnemy extends BaseEliteEnemy {
 	static config = {
 		width: 180,
 		height: 150,
-		speed: 0.4 * 60,
+		speed: 1.0 * 60,
 		hp: 5000,
 		maxHp: 5000,
 		color: COLORS.DARK_GRAY,
@@ -906,6 +906,8 @@ class BossEnemy extends BaseEliteEnemy {
 		super(bossConfig, difficulty);
 
 		this.difficulty = difficulty;
+		const baseAttackCooldown = 3000;
+		this.attackCooldown = Math.max(800, baseAttackCooldown - (difficulty.level - 1) * 100);
 		this.weakPoint = {
 			xOffset: this.width / 2 - 20,
 			yOffset: 20,
@@ -921,20 +923,27 @@ class BossEnemy extends BaseEliteEnemy {
 	}
 
 	update(deltaTime) {
+		// 画面上部に到達するまでは下に移動
 		if (this.y < 80) {
+			// ボスの初期Y座標が80に達するまで移動
 			this.y += this.speed * deltaTime;
 		} else {
+			// ここに到達したら攻撃開始前の時間を短縮
+			// 既存の左右移動ロジック
 			this.x += this.patrolSpeed * this.patrolDirection * deltaTime;
 			if (this.x <= 0 || this.x + this.width >= SCREEN_WIDTH) {
 				this.patrolDirection *= -1;
 			}
 
 			const currentTime = performance.now();
-			if (currentTime - this.phaseTimer > this.attackCooldown) {
+			const currentCooldown = this.phaseTimer === 0 ? 500 : this.attackCooldown;
+
+			if (currentTime - this.phaseTimer > currentCooldown) {
 				this.shoot();
 				this.phaseTimer = currentTime;
-				this.attackPhase = (this.attackPhase + 1) % 5;
-				this.attackCooldown = 2000 + Math.random() * 1000;
+				// 修正: 攻撃フェーズをランダムに選択
+				this.attackPhase = Math.floor(Math.random() * 5); // 0から4のランダムな整数
+				this.attackCooldown = Math.max(800, 3000 - (this.difficulty.level - 1) * 100);
 			}
 		}
 
@@ -995,26 +1004,37 @@ class BossEnemy extends BaseEliteEnemy {
 	shootSpread() {
 		const bulletX = this.x + this.width / 2;
 		const bulletY = this.y + this.height;
-		const speed = 10 * 60 * this.difficulty.bulletSpeedMultiplier;
-		const numWaves = 3;
-		const waveDelay = 200;
+		let speed = 10 * 60 * this.difficulty.bulletSpeedMultiplier;
+		let numWaves = 3;
+		let waveDelay = 200;
+		let spreadCount = 9; // 基本の拡散弾数 (-4 から 4 で 9発)
 
-		const baseAngleToPlayer = Math.atan2(player.y + player.height / 2 - bulletY, player.x + player.width / 2 - bulletX); // プレイヤーの方向を計算
+		// レベル10以上で強化
+		if (this.difficulty.level >= 10) {
+			numWaves = 4; // ウェーブ数を増やす
+			speed *= 1.1; // 速度を少し上げる
+			spreadCount = 11; // 弾数を増やす (-5 から 5 で 11発)
+		}
+		// レベル20以上でさらに強化
+		if (this.difficulty.level >= 20) {
+			numWaves = 5; // さらにウェーブ数を増やす
+			speed *= 1.1; // さらに速度を上げる
+			spreadCount = 13; // 弾数を増やす (-6 から 6 で 13発)
+		}
 
-		const self = this; // self に this を保存
+		const baseAngleToPlayer = Math.atan2(player.y + player.height / 2 - bulletY, player.x + player.width / 2 - bulletX);
+		const self = this;
 
 		for (let wave = 0; wave < numWaves; wave++) {
 			setTimeout(() => {
-				if (!self.isActive) {
-					// setTimeout のコールバックが実行される時点でボスがアクティブでない場合は何もしない
-					return;
-				}
-
-				for (let i = -4; i <= 4; i++) {
-					const angle = baseAngleToPlayer + (i * 15 * Math.PI) / 180; // 基準角度をプレイヤーの方向 + 拡散角度に変更
+				if (!self.isActive) return;
+				const startI = -Math.floor(spreadCount / 2);
+				const endI = Math.ceil(spreadCount / 2) - 1; // 弾の数を調整するためのループ範囲
+				for (let i = startI; i <= endI; i++) {
+					const angle = baseAngleToPlayer + (i * 15 * Math.PI) / 180;
 					const targetX = bulletX + Math.cos(angle) * 100;
 					const targetY = bulletY + Math.sin(angle) * 100;
-					self.bullets.push(new GenericEnemyBullet(bulletX, bulletY, targetX, targetY, 15, 15, speed, COLORS.PINK, 15)); // self.bullets を使用して弾を追加
+					self.bullets.push(new GenericEnemyBullet(bulletX, bulletY, targetX, targetY, 15, 15, speed, COLORS.PINK, 15));
 				}
 			}, wave * waveDelay);
 		}
@@ -1023,29 +1043,61 @@ class BossEnemy extends BaseEliteEnemy {
 	shootHoming() {
 		const bulletX = this.x + this.width / 2;
 		const bulletY = this.y + this.height;
-		const speed = 7 * 60 * this.difficulty.bulletSpeedMultiplier;
-		const lifetime = this.difficulty.homingLifetime;
-		const numHomingBullets = 15; // 弾の数を3倍に
-		const isInvulnerable = true; // 迎撃不可にするフラグ
+		let speed = 7 * 60 * this.difficulty.bulletSpeedMultiplier;
+		let lifetime = this.difficulty.homingLifetime;
+		let numHomingBullets = 15; // 基本の弾数
+		const isInvulnerable = true;
+
+		// レベル10以上で強化
+		if (this.difficulty.level >= 10) {
+			numHomingBullets = 20; // 弾数を増やす
+			speed *= 1.1; // 速度を上げる
+			// lifetime を少し短くして攻撃頻度を上げるか、そのままで数で押すか調整
+		}
+		// レベル20以上でさらに強化
+		if (this.difficulty.level >= 20) {
+			numHomingBullets = 25; // さらに弾数を増やす
+			speed *= 1.1; // さらに速度を上げる
+		}
 
 		for (let i = 0; i < numHomingBullets; i++) {
-			// ループ回数を numHomingBullets に変更
 			const angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
 			this.bullets.push(
 				new HomingBullet(bulletX, bulletY, angle, speed, 1.5, COLORS.YELLOW, 20, lifetime, isInvulnerable)
-			); // isInvulnerable をコンストラクタに渡す
+			);
+			// isInvulnerable をコンストラクタに渡す
 		}
 	}
 
 	shootLaser() {
-		const bossLaserThickness = 60; // ボス専用の太さを指定
-		this.bullets.push(new EnemyLaser(this, player.x, player.y, 800, bossLaserThickness));
+		const bossLaserThickness = 80;
+		let lockOnTime = 800;
+		let beamDuration = 700; // EnemyLaserクラスのbeamDurationも考慮
+
+		// レベル10以上で強化
+		if (this.difficulty.level >= 10) {
+			lockOnTime = 600; // ロックオン時間を短縮
+		}
+		// レベル20以上でさらに強化
+		if (this.difficulty.level >= 20) {
+			lockOnTime = 400; // さらにロックオン時間を短縮
+		}
+		this.bullets.push(new EnemyLaser(this, player.x, player.y, lockOnTime, bossLaserThickness));
 	}
 
 	shootBarrage() {
+		let numOrbs = 3; // 基本のオーブ数
+		// レベル10以上で強化
+		if (this.difficulty.level >= 10) {
+			numOrbs = 4;
+		}
+		// レベル20以上でさらに強化
+		if (this.difficulty.level >= 20) {
+			numOrbs = 5;
+		}
 		const orbX = this.x + this.width / 2 - 35 / 2;
 		const orbY = this.y + this.height / 2;
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < numOrbs; i++) {
 			const angle = Math.random() * Math.PI;
 			this.bullets.push(new BarrageOrb(orbX, orbY, angle));
 		}
@@ -1055,7 +1107,21 @@ class BossEnemy extends BaseEliteEnemy {
 		const startX = this.x + this.width / 2;
 		const startY = this.y + this.height;
 		const spreadAngle = (20 * Math.PI) / 180;
-		for (let i = -2; i <= 2; i++) {
+		let numWalls = 5; // 基本の壁の数
+
+		// レベル10以上で強化
+		if (this.difficulty.level >= 10) {
+			numWalls = 7; // 壁の数を増やす
+		}
+		// レベル20以上でさらに強化
+		if (this.difficulty.level >= 20) {
+			numWalls = 9; // さらに壁の数を増やす
+		}
+
+		const startI = -Math.floor(numWalls / 2);
+		const endI = Math.ceil(numWalls / 2) - 1; // 壁の数を調整するためのループ範囲
+
+		for (let i = startI; i <= endI; i++) {
 			const angle = Math.PI / 2 + i * spreadAngle;
 			this.bullets.push(new ObstacleBullet(startX, startY, angle, this.difficulty.wallHp * 2, false));
 		}
