@@ -8,7 +8,7 @@ const COLORS = {
 	BLACK: "#000000",
 	WHITE: "#FFFFFF",
 	RED: "#FF0000",
-	PURPLE: "#800080",
+	PURPLE: "#B266FF",
 	YELLOW: "#FFFF00",
 	GREEN: "#00FF00",
 	CYAN: "#00FFFF",
@@ -52,11 +52,11 @@ let difficultyUpAnimation = { active: false, alpha: 0, startTime: 0 };
 let gameOverTapCount = 0;
 
 const player = {
-	width: 30,
-	height: 30,
+	width: 20,
+	height: 20,
 	attackMultiplier: 1.0,
-	x: (SCREEN_WIDTH - 30) / 2,
-	y: SCREEN_HEIGHT - 30 - 50,
+	x: (SCREEN_WIDTH - 20) / 2,
+	y: SCREEN_HEIGHT - 20 - 50,
 	hp: 200,
 	maxHp: 200,
 	lastHitTime: 0,
@@ -159,11 +159,6 @@ class PlayerHomingBullet {
 		const prevY = this.y;
 
 		if (!this.target || (this.target.isActive !== undefined && !this.target.isActive)) {
-			if (this.isBossBattleActive) {
-				this.isExpired = true;
-				return;
-			}
-
 			this.y += Math.sin(this.angle) * this.speed * deltaTime;
 			this.x += Math.cos(this.angle) * this.speed * deltaTime;
 		} else {
@@ -426,7 +421,7 @@ class EnemyLaser {
 
 		this.lockOnDuration = lockOnTime;
 		this.beamFireTime = this.spawnTime + this.lockOnDuration;
-		this.beamDuration = 700;
+		this.beamDuration = 100;
 	}
 
 	update(deltaTime) {
@@ -568,7 +563,7 @@ class ElitePurple extends BaseEliteEnemy {
 		for (let i = -2; i <= 2; i++) {
 			const angle = Math.PI / 2 + i * spreadAngle;
 			this.bullets.push(
-				new HomingBullet(bulletX, bulletY, angle, speed, turnSpeed, COLORS.YELLOW, damage, lifetime, isInvulnerable)
+				new HomingBullet(bulletX, bulletY, angle, speed, turnSpeed, COLORS.PURPLE, damage, lifetime, isInvulnerable)
 			); // isInvulnerable をコンストラクタに渡す
 		}
 	}
@@ -1536,7 +1531,7 @@ function update(deltaTime) {
 		lastShotTime = currentTime;
 	}
 
-	const homingCooldown = 800 / rateMultiplier;
+	const homingCooldown = 400 / rateMultiplier;
 	if (player.homingLevel > 0 && currentTime - lastHomingShotTime > homingCooldown) {
 		const allEnemies = [
 			currentElitePurple,
@@ -1800,33 +1795,123 @@ function update(deltaTime) {
 	}
 
 	for (let i = playerHomingBullets.length - 1; i >= 0; i--) {
-		const pBullet = playerHomingBullets[i];
-		let bulletRemoved = false;
-		for (const elite of eliteEnemies) {
-			if (elite && elite.isActive && checkCollision(pBullet, elite)) {
-				if (elite.takeDamage(pBullet)) {
+		const pBullet = playerHomingBullets[i]; // この変数はこのループ内で有効
+		let bulletRemoved = false; // 各 pBullet の処理ごとにリセット
+
+		// --- ここから新しい衝突判定の追加・配置 ---
+
+		// 1. 通常の敵 (enemies) との衝突判定
+		for (let j = enemies.length - 1; j >= 0; j--) {
+			if (checkCollision(pBullet, enemies[j])) {
+				if (enemies[j].takeDamage(pBullet)) {
+					enemies.splice(j, 1); // 敵が倒されたらリストから削除
 				}
-				playerHomingBullets.splice(i, 1);
+				playerHomingBullets.splice(i, 1); // 追尾弾も消す
+				bulletRemoved = true;
+				break; // この追尾弾の他の衝突チェックは不要
+			}
+		}
+		if (bulletRemoved) continue; // 弾が削除されたら次の追尾弾へ
+
+		// 2. フリーローム敵 (freeRoamEnemies) との衝突判定
+		for (let j = freeRoamEnemies.length - 1; j >= 0; j--) {
+			if (checkCollision(pBullet, freeRoamEnemies[j])) {
+				if (freeRoamEnemies[j].takeDamage(pBullet)) {
+					freeRoamEnemies.splice(j, 1); // 敵が倒されたらリストから削除
+				}
+				playerHomingBullets.splice(i, 1); // 追尾弾も消す
 				bulletRemoved = true;
 				break;
 			}
 		}
-		if (bulletRemoved) continue;
+		if (bulletRemoved) continue; // 弾が削除されたら次の追尾弾へ
 
-		// ボスの弾（BarrageOrb以外）との衝突判定
-		if (currentBoss && currentBoss.isActive) {
-			for (let k = currentBoss.bullets.length - 1; k >= 0; k--) {
-				const bossBullet = currentBoss.bullets[k];
-				// BarrageOrbはtakeDamageを持たないので、if文で弾く
-				if (!(bossBullet instanceof BarrageOrb) && typeof bossBullet.takeDamage === "function") {
-					if (checkCollision(pBullet, bossBullet)) {
-						if (bossBullet.takeDamage(pBullet)) {
-							currentBoss.bullets.splice(k, 1);
+		// 3. エリート敵本体との衝突判定 (既存のコード)
+		for (const elite of eliteEnemies) {
+			if (elite && elite.isActive && checkCollision(pBullet, elite)) {
+				if (elite.takeDamage(pBullet)) {
+				}
+				playerHomingBullets.splice(i, 1); // 追尾弾も消す
+				bulletRemoved = true;
+				break;
+			}
+		}
+		if (bulletRemoved) continue; // 弾が削除されたら次の追尾弾へ
+
+		// 4. ボス本体との衝突判定 (既存のコード)
+		// ボス本体との衝突も、弾は消滅すべき
+		if (currentBoss && currentBoss.isActive && checkCollision(pBullet, currentBoss)) {
+			if (currentBoss.takeDamage(pBullet)) {
+			}
+			playerHomingBullets.splice(i, 1); // 追尾弾も消す
+			// bulletRemoved = true; // break するので continue は不要
+			break; // ボスに当たったらこの追尾弾の処理を終了し、次の追尾弾へ
+		}
+		// ★ここには `if (bulletRemoved) continue;` は不要。上の `break` でループを抜けるため。
+
+		// 5. 紫エリートの弾 (HomingBullet) との衝突判定
+		// 紫エリートの弾が迎撃不可でない場合のみ、ダメージを与え、弾が消える
+		if (currentElitePurple) {
+			for (let k = currentElitePurple.bullets.length - 1; k >= 0; k--) {
+				const eliteBullet = currentElitePurple.bullets[k];
+				// HomingBullet のインスタンスであり、かつ迎撃不可でない場合
+				if (eliteBullet instanceof HomingBullet && !eliteBullet.isInvulnerable) {
+					if (checkCollision(pBullet, eliteBullet)) {
+						if (eliteBullet.takeDamage(pBullet)) {
+							// 紫エリートの弾にダメージ
+							currentElitePurple.bullets.splice(k, 1); // 破壊されたら紫エリートの弾を削除
+							score += 1; // 撃墜スコア
 						}
-						playerHomingBullets.splice(i, 1);
+						playerHomingBullets.splice(i, 1); // 追尾弾も消す
 						bulletRemoved = true;
 						break;
 					}
+				}
+			}
+		}
+		if (bulletRemoved) continue; // 弾が削除されたら次の追尾弾へ
+
+		// 6. ボスの弾 (BarrageOrb と 迎撃不可の HomingBullet 以外) との衝突判定
+		// BarrageOrb (迎撃不可) とボスの迎撃不可 HomingBullet は貫通させる
+		if (currentBoss) {
+			for (let k = currentBoss.bullets.length - 1; k >= 0; k--) {
+				const bossBullet = currentBoss.bullets[k];
+				// BarrageOrb ではない AND (HomingBullet ではない OR HomingBullet だが迎撃不可ではない)
+				// つまり、破壊可能なボスの弾のみを対象
+				if (!(bossBullet instanceof BarrageOrb) && !(bossBullet instanceof HomingBullet && bossBullet.isInvulnerable)) {
+					// bossBullet が takeDamage メソッドを持っていることを確認
+					if (typeof bossBullet.takeDamage === "function") {
+						if (checkCollision(pBullet, bossBullet)) {
+							if (bossBullet.takeDamage(pBullet)) {
+								// ボスの弾にダメージ
+								currentBoss.bullets.splice(k, 1); // 破壊されたらボスの弾を削除
+							}
+							playerHomingBullets.splice(i, 1); // 追尾弾も消す
+							bulletRemoved = true;
+							break;
+						}
+					}
+				}
+			}
+		}
+		if (bulletRemoved) continue; // 弾が削除されたら次の追尾弾へ
+
+		// 7. 緑エリートの壁 (ObstacleBullet) との衝突判定
+		if (currentEliteGreenEnemy) {
+			for (let j = currentEliteGreenEnemy.bullets.length - 1; j >= 0; j--) {
+				const wall = currentEliteGreenEnemy.bullets[j];
+				if (checkCollision(pBullet, wall)) {
+					if (wall.takeDamage(pBullet)) {
+						// 壁にダメージ
+						if (wall.canDropHealth) {
+							// HPオーブを落とせる場合
+							healthOrbs.push(new HealthOrb(wall.x + wall.width / 2, wall.y + wall.height / 2, 10, 30));
+						}
+						currentEliteGreenEnemy.bullets.splice(j, 1); // 破壊されたら壁を削除
+					}
+					playerHomingBullets.splice(i, 1); // 追尾弾も消す
+					bulletRemoved = true;
+					break;
 				}
 			}
 		}
