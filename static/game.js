@@ -69,10 +69,12 @@ const player = {
   spreadLevel: 0,
   spreadStartTime: 0,
   spreadDuration: 10000,
-  rateUpLevel: 0,
-  rateUpStartTime: 0,
+  // ★★★★★ 変更点 ★★★★★
+  // rateUpLevel, rateUpStartTime, rateUpDurationを削除し、
+  // 各スタックの有効期限を管理する配列に変更
+  rateUpTimers: [],
   rateUpOffsetAngle: 0,
-  rateUpDuration: 10000,
+  // ★★★★★ 変更ここまで ★★★★★
   shieldLevel: 0,
   shields: 0,
   shieldObjectSize: 40,
@@ -1399,8 +1401,10 @@ function startBossBattle() {
   // Reset player's temporary buffs
   player.spreadLevel = 0;
   player.spreadStartTime = 0;
-  player.rateUpLevel = 0;
-  player.rateUpStartTime = 0;
+  // ★★★★★ 変更点 ★★★★★
+  // レートアップバフのタイマーをリセット
+  player.rateUpTimers = [];
+  // ★★★★★ 変更ここまで ★★★★★
   player.shieldLevel = 0;
   player.shields = 0;
   player.rangeLevel = 0;
@@ -1455,7 +1459,10 @@ function resetGame() {
   player.x = (SCREEN_WIDTH - player.width) / 2;
   player.y = SCREEN_HEIGHT - player.height - 30;
   player.spreadLevel = 0;
-  player.rateUpLevel = 0;
+  // ★★★★★ 変更点 ★★★★★
+  // ゲームリセット時にrateUpTimersを空の配列に
+  player.rateUpTimers = [];
+  // ★★★★★ 変更ここまで ★★★★★
   player.shieldLevel = 0;
   player.shields = 0;
   player.rangeLevel = 0;
@@ -1534,11 +1541,21 @@ function update(deltaTime) {
   if (player.homingLevel > 0) {
     player.shieldOffsetAngle = (player.shieldOffsetAngle + 90 * (deltaTime || 0)) % 360;
   }
-  if (player.rateUpLevel > 0) {
+  // ★★★★★ 変更点 ★★★★★
+  // rateUpLevel > 0 の代わりに rateUpTimers.length > 0 で判定
+  if (player.rateUpTimers.length > 0) {
     player.rateUpOffsetAngle = (player.rateUpOffsetAngle + 180 * deltaTime) % 360;
   }
+  // 古いrateUpのタイマー処理を削除
+  // ★★★★★ 変更ここまで ★★★★★
+
+  // ★★★★★ 変更点 ★★★★★
+  // 新しいレートアップバフの有効期限切れ処理
+  // 有効期限(expiry > currentTime)を過ぎたタイマーを配列から除去する
+  player.rateUpTimers = player.rateUpTimers.filter((expiry) => expiry > currentTime);
+  // ★★★★★ 変更ここまで ★★★★★
+
   if (player.spreadLevel > 0 && currentTime - player.spreadStartTime > player.spreadDuration) player.spreadLevel = 0;
-  if (player.rateUpLevel > 0 && currentTime - player.rateUpStartTime > player.rateUpDuration) player.rateUpLevel = 0;
   if (player.rangeLevel > 0 && currentTime - player.rangeStartTime > player.rangeDuration) {
     player.rangeLevel = 0;
     player.beamCharges = 0;
@@ -1560,10 +1577,13 @@ function update(deltaTime) {
   player.x = Math.max(0, Math.min(player.x, SCREEN_WIDTH - player.width));
   player.y = Math.max(0, Math.min(player.y, SCREEN_HEIGHT - player.height));
 
-  let rateMultiplier = 1;
-  if (player.rateUpLevel > 0) {
-    rateMultiplier = player.rateUpLevel * 1.5;
-  }
+  // ★★★★★ 変更点 ★★★★★
+  // レートアップ効果の計算方法を変更
+  // スタック数(rateUpTimers.length)に応じて、1.5のべき乗でレートを乗算
+  const rateUpCount = player.rateUpTimers.length;
+  const rateMultiplier = rateUpCount > 0 ? Math.pow(1.5, rateUpCount) : 1;
+  // ★★★★★ 変更ここまで ★★★★★
+
   const cooldown = bulletSettings.cooldown / rateMultiplier;
   if (currentTime - lastShotTime > cooldown) {
     const bulletXCenter = player.x + player.width / 2;
@@ -2109,15 +2129,16 @@ function update(deltaTime) {
         player.attackMultiplier = Math.max(1.0, player.attackMultiplier);
         cumulativeBuffsCollected = 0;
 
-        // ★★★★★ 修正箇所 ★★★★★
         // 全種類のバフを1段階ずつレベルアップ
         // 1. Spread
         player.spreadLevel = Math.min(3, player.spreadLevel + 1);
         player.spreadStartTime = currentTime;
 
         // 2. RateUp
-        player.rateUpLevel = Math.min(3, player.rateUpLevel + 1);
-        player.rateUpStartTime = currentTime;
+        // ★★★★★ 変更点 ★★★★★
+        // RewardOrb取得時にも新しいタイマーを追加
+        player.rateUpTimers.push(currentTime + 10000); // 10秒のタイマーを追加
+        // ★★★★★ 変更ここまで ★★★★★
 
         // 3. Shield
         player.shieldLevel = Math.min(3, player.shieldLevel + 1);
@@ -2137,7 +2158,6 @@ function update(deltaTime) {
         // 5. Homing
         player.homingLevel = Math.min(3, player.homingLevel + 1);
         player.homingStartTime = currentTime;
-        // ★★★★★ 修正ここまで ★★★★★
 
         buffOrbs.splice(i, 1);
         continue;
@@ -2147,10 +2167,13 @@ function update(deltaTime) {
           player.spreadLevel = Math.min(3, player.spreadLevel + 1);
           player.spreadStartTime = currentTime;
           break;
+        // ★★★★★ 変更点 ★★★★★
+        // レートアップバフ取得時の処理を変更
         case "rateUp":
-          player.rateUpLevel = Math.min(3, player.rateUpLevel + 1);
-          player.rateUpStartTime = currentTime;
+          // 上限なく、タイマー配列に新しい有効期限を追加する
+          player.rateUpTimers.push(currentTime + 10000); // 10秒のタイマー
           break;
+        // ★★★★★ 変更ここまで ★★★★★
         case "shield":
           player.shieldLevel = Math.min(3, player.shieldLevel + 1);
           const shieldCounts = [0, 3, 4, 5];
@@ -2214,15 +2237,21 @@ function draw() {
   const currentTime = performance.now();
 
   // --- バフエフェクトの描画（点滅処理付き）---
-  if (player.rateUpLevel > 0) {
-    const remainingTime = player.rateUpDuration - (currentTime - player.rateUpStartTime);
+  // ★★★★★ 変更点 ★★★★★
+  // rateUpLevelの代わりにrateUpTimers.lengthで描画を判定
+  const rateUpCount = player.rateUpTimers.length;
+  if (rateUpCount > 0) {
+    // 一番早く期限切れになるタイマーを見つける
+    const nextExpiry = Math.min(...player.rateUpTimers);
+    const remainingTime = nextExpiry - currentTime;
     const isExpiring = remainingTime < 3000;
     const shouldDraw = !isExpiring || Math.floor(currentTime / 150) % 2 === 0;
 
     if (shouldDraw) {
       const centerX = player.x + player.width / 2;
       const centerY = player.y + player.height / 2;
-      const numTriangles = player.rateUpLevel;
+      // スタック数に応じて描画する三角形の数を変更
+      const numTriangles = rateUpCount;
       const orbitRadius = player.width / 2 + 20;
       const triangleSize = 15;
       for (let i = 0; i < numTriangles; i++) {
@@ -2243,6 +2272,7 @@ function draw() {
       }
     }
   }
+  // ★★★★★ 変更ここまで ★★★★★
 
   if (player.homingLevel > 0) {
     const remainingTime = player.homingDuration - (currentTime - player.homingStartTime);
@@ -2405,10 +2435,17 @@ function draw() {
   if (player.shields > 0) {
     activeBuffs.push({ type: "shield", value: player.shields, level: player.shieldLevel });
   }
-  if (player.rateUpLevel > 0) {
-    const remaining = 1 - (currentTime - player.rateUpStartTime) / player.rateUpDuration;
-    activeBuffs.push({ type: "rateUp", value: remaining, level: player.rateUpLevel });
+  // ★★★★★ 変更点 ★★★★★
+  // レートアップバフのUI表示ロジックを変更
+  const currentRateUpCount = player.rateUpTimers.length;
+  if (currentRateUpCount > 0) {
+    // 次に切れるタイマーの残り時間を計算
+    const nextExpiry = Math.min(...player.rateUpTimers);
+    // 各スタックの基本時間は10秒(10000ms)
+    const remaining = (nextExpiry - currentTime) / 10000;
+    activeBuffs.push({ type: "rateUp", value: remaining, level: currentRateUpCount });
   }
+  // ★★★★★ 変更ここまで ★★★★★
   if (player.rangeLevel > 0 && player.beamCharges > 0) {
     const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
     activeBuffs.push({ type: "range", value: player.beamCharges, level: player.rangeLevel, remaining: remaining });
