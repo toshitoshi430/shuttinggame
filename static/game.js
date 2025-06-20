@@ -91,6 +91,7 @@ const player = {
 
 const bulletSettings = {
 	width: 8,
+	spreadWidth: 4,
 	height: 25,
 	speed: 18 * 60,
 	cooldown: 80,
@@ -123,12 +124,12 @@ class PlayerSpreadBullet {
 		this.x = x;
 		this.y = y;
 		this.spawnY = y;
-		this.width = bulletSettings.width;
+		this.width = bulletSettings.spreadWidth; // ★「spreadWidth: 4」を参照するように変更
 		this.height = bulletSettings.height;
 		const angleRad = ((angleDeg - 90) * Math.PI) / 180;
 		this.vx = speed * Math.cos(angleRad);
 		this.vy = speed * Math.sin(angleRad);
-		this.damage = 10 * player.attackMultiplier; // Use player's permanent attack multiplier
+		this.damage = 5 * player.attackMultiplier; // 攻撃力も変更済み
 	}
 	update(deltaTime) {
 		this.x += this.vx * deltaTime;
@@ -406,7 +407,7 @@ class Beam {
 	}
 	draw() {
 		const alpha = Math.max(0, 1 - (performance.now() - this.spawnTime) / this.duration);
-		ctx.fillStyle = `rgba(0, 153, 255, ${alpha * 0.7})`;
+		ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
 		ctx.fillRect(this.x, this.y, this.width, this.height);
 	}
 }
@@ -1137,19 +1138,19 @@ class BossEnemy extends BaseEliteEnemy {
 	shootWalls() {
 		let numRows = 4; // 壁を配置する行の数
 		let numCols = 6; // 壁を配置する列の数
-		let spawnChance = 0.5; // 各マスに壁が出現する確率 (0.5 = 50%)
+		let spawnChance = 0.1;
 
 		// --- 難易度による変化 ---
 		const level = this.difficulty.level;
 		if (level >= 15) {
 			numRows = 5;
 			numCols = 7;
-			spawnChance = 0.6; // 60%
+			spawnChance = 0.3;
 		}
 		if (level >= 25) {
 			numRows = 6;
 			numCols = 8;
-			spawnChance = 0.7; // 70%
+			spawnChance = 0.5;
 		}
 		// -------------------------
 
@@ -1404,7 +1405,7 @@ function updateDifficultySettings(level) {
 		attackRateMultiplier: 1.0,
 		elites: { purple: false, pink: false, orange: false, green: false, blue: false },
 		wallHp: 100,
-		homingLifetime: 4000,
+		homingLifetime: 3000,
 		homingTurnSpeed: 1.5,
 		eliteSlotInterval: 3000,
 		attackCooldownReduction: 0,
