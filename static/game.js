@@ -13,6 +13,10 @@ playerImage.src = "/static/Rocket.png";
 const bossImage = new Image();
 let bossImageLoaded = false;
 
+//被ダメージ音
+const damageSound = new Audio("/static/damage.mp3"); // ファイル名はご自身のものに合わせてください
+damageSound.volume = 0.5; // 音量を50%に設定（0.0から1.0の間で調整可能）
+
 bossImage.onload = function () {
 	bossImageLoaded = true;
 };
@@ -2162,13 +2166,14 @@ function update(deltaTime) {
 
 		if (damageTaken > 0) {
 			if (player.shields > 0) {
-				if (isEliteAttack) {
-					player.shields--;
-					healthOrbs.push(new HealthOrb(player.x + player.width / 2, player.y + player.height / 2, 10, 30));
-				}
+				// ... (シールドがある場合の処理) ...
 			} else {
 				player.hp -= damageTaken;
 				player.lastHitTime = currentTime;
+
+				// ★★★ ここでダメージ音を再生 ★★★
+				damageSound.currentTime = 0; // 短時間に連続でダメージを受けても音が鳴るよう、再生位置を最初に戻す
+				damageSound.play(); // 音を再生
 			}
 		}
 	}
