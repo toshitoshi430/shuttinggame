@@ -1137,19 +1137,19 @@ class BossEnemy extends BaseEliteEnemy {
 
 	shootWalls() {
 		let numRows = 4; // 壁を配置する行の数
-		let numCols = 6; // 壁を配置する列の数
+		let numCols = 5; // 壁を配置する列の数
 		let spawnChance = 0.1;
 
 		// --- 難易度による変化 ---
 		const level = this.difficulty.level;
 		if (level >= 15) {
 			numRows = 5;
-			numCols = 7;
+			numCols = 5;
 			spawnChance = 0.3;
 		}
 		if (level >= 25) {
 			numRows = 6;
-			numCols = 8;
+			numCols = 5;
 			spawnChance = 0.5;
 		}
 		// -------------------------
