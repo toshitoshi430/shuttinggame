@@ -343,8 +343,8 @@ class HomingBullet {
 		// isInvulnerableを引数として追加し、デフォルト値を設定
 		this.x = x;
 		this.y = y;
-		this.width = 20;
-		this.height = 20;
+		this.width = 15;
+		this.height = 50;
 		this.speed = speed;
 		this.turnSpeed = turnSpeed;
 		this.color = color;
@@ -372,9 +372,14 @@ class HomingBullet {
 	}
 	draw() {
 		ctx.fillStyle = this.color;
-		ctx.beginPath();
-		ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
-		ctx.fill();
+		ctx.save();
+		// 弾の中心に座標を移動
+		ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+		// 弾の進行方向に合わせて描画を回転
+		ctx.rotate(this.angle + Math.PI / 2);
+		// 中止を基準に長方形を描画
+		ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+		ctx.restore();
 	}
 	takeDamage(bullet) {
 		if (this.isInvulnerable) {
@@ -1062,18 +1067,18 @@ class BossEnemy extends BaseEliteEnemy {
 		const bulletY = this.y + this.height;
 		let speed = 7 * 60 * this.difficulty.bulletSpeedMultiplier;
 		let lifetime = this.difficulty.homingLifetime;
-		let numHomingBullets = 15; // 基本の弾数
+		let numHomingBullets = 10; // 基本の弾数
 		const isInvulnerable = true;
 
 		// レベル10以上で強化
 		if (this.difficulty.level >= 10) {
-			numHomingBullets = 20; // 弾数を増やす
+			numHomingBullets = 15; // 弾数を増やす
 			speed *= 1.1; // 速度を上げる
 			// lifetime を少し短くして攻撃頻度を上げるか、そのままで数で押すか調整
 		}
 		// レベル20以上でさらに強化
 		if (this.difficulty.level >= 20) {
-			numHomingBullets = 25; // さらに弾数を増やす
+			numHomingBullets = 20; // さらに弾数を増やす
 			speed *= 1.1; // さらに速度を上げる
 		}
 
