@@ -562,7 +562,7 @@ class ElitePurple extends BaseEliteEnemy {
 			this.lastShotTime = currentTime;
 		}
 		this.bullets.forEach((b) => b.update(deltaTime));
-		this.bullets = this.bullets.filter((b) => !b.isExpired);
+		this.bullets = this.bullets.filter((b) => !b.isExpired && b.y < SCREEN_HEIGHT - 200);
 	}
 	shoot() {
 		const bulletX = this.x + this.width / 2;
@@ -732,7 +732,7 @@ class ElitePink extends BaseEliteEnemy {
 			this.lastShotTime = currentTime;
 		}
 		this.bullets.forEach((b) => b.update(deltaTime));
-		this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT && b.x > -b.width && b.x < SCREEN_WIDTH);
+		this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT - 200 && b.x > -b.width && b.x < SCREEN_WIDTH);
 	}
 	shoot() {
 		const baseAngle = Math.atan2(
@@ -827,7 +827,7 @@ class EliteGreenEnemy extends BaseEliteEnemy {
 			this.lastShotTime = currentTime;
 		}
 		this.bullets.forEach((b) => b.update(deltaTime));
-		this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT && Math.abs(b.x) < SCREEN_WIDTH * 1.5);
+		this.bullets = this.bullets.filter((b) => b.y < SCREEN_HEIGHT - 200 && Math.abs(b.x) < SCREEN_WIDTH * 1.5);
 	}
 	shoot() {
 		const numWalls = 5;
@@ -2242,15 +2242,15 @@ function update(deltaTime) {
 
 	bullets = bullets.filter((b) => b.y > -b.height);
 	playerHomingBullets = playerHomingBullets.filter((b) => !b.isExpired);
-	enemies = enemies.filter((e) => e.y < SCREEN_HEIGHT);
+	enemies = enemies.filter((e) => e.y < SCREEN_HEIGHT - 200);
 	freeRoamEnemies = freeRoamEnemies.filter(
-		(e) => e.y < SCREEN_HEIGHT + 30 && e.y > -30 && e.x > -30 && e.x < SCREEN_WIDTH + 30
+		(e) => e.y < SCREEN_HEIGHT - 200 && e.y > -30 && e.x > -30 && e.x < SCREEN_WIDTH + 30
 	);
 	explosionBullets = explosionBullets.filter(
-		(b) => b.y > -b.height && b.y < SCREEN_HEIGHT && b.x > -b.width && b.x < SCREEN_WIDTH
+		(b) => b.y > -b.height && b.y < SCREEN_HEIGHT - 200 && b.x > -b.width && b.x < SCREEN_WIDTH
 	);
-	healthOrbs = healthOrbs.filter((o) => o.y < SCREEN_HEIGHT);
-	buffOrbs = buffOrbs.filter((o) => o.y < SCREEN_HEIGHT);
+	healthOrbs = healthOrbs.filter((o) => o.y < SCREEN_HEIGHT - 200);
+	buffOrbs = buffOrbs.filter((o) => o.y < SCREEN_HEIGHT - 200);
 
 	if (currentElitePurple && !currentElitePurple.isActive && currentElitePurple.bullets.length === 0)
 		currentElitePurple = null;
