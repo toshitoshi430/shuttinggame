@@ -1162,19 +1162,19 @@ class BossEnemy extends BaseEliteEnemy {
 	shootWalls() {
 		let numRows = 4; // 壁を配置する行の数
 		let numCols = 5; // 壁を配置する列の数
-		let spawnChance = 0.1;
+		let spawnChance = 0.11;
 
 		// --- 難易度による変化 ---
 		const level = this.difficulty.level;
 		if (level >= 15) {
 			numRows = 5;
 			numCols = 5;
-			spawnChance = 0.3;
+			spawnChance = 0.15;
 		}
 		if (level >= 25) {
 			numRows = 6;
 			numCols = 5;
-			spawnChance = 0.5;
+			spawnChance = 0.2;
 		}
 		// -------------------------
 
@@ -2375,7 +2375,7 @@ function draw() {
 		const shieldCenterY = player.y + player.height / 2;
 		for (let i = 0; i < player.shields; i++) {
 			const angleRad = ((player.shieldOffsetAngle + i * (360 / player.shields)) * Math.PI) / 180;
-			const offsetDist = player.width / 2 + 10;
+			const offsetDist = player.width / 2 - 10;
 			const shieldX = shieldCenterX + offsetDist * Math.cos(angleRad);
 			const shieldY = shieldCenterY + offsetDist * Math.sin(angleRad);
 			ctx.strokeStyle = COLORS.LIGHT_BLUE;
