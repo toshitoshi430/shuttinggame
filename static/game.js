@@ -1,6 +1,16 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+const playerImage = new Image();
+let playerImageLoaded = false; // 画像が読み込めたかを確認するための変数
+
+// 画像の読み込みが完了したら、フラグをtrueにする
+playerImage.onload = function () {
+	playerImageLoaded = true;
+};
+// 読み込む画像ファイルを指定（ファイル名はご自身のものに合わせてください）
+playerImage.src = "/static/Rocket.png";
+
 const SCREEN_WIDTH = canvas.width;
 const SCREEN_HEIGHT = canvas.height;
 
@@ -57,11 +67,13 @@ let cumulativeBuffsCollected = 0;
 let bossAbsorbAnimation = { active: false, alpha: 0, startTime: 0, text: "" };
 
 const player = {
-	width: 20,
-	height: 20,
-	attackMultiplier: 1.0, // This will be the permanent attack multiplier
-	x: (SCREEN_WIDTH - 20) / 2,
-	y: SCREEN_HEIGHT - 20 - 50,
+	width: 50, // 見た目の画像の幅
+	height: 50, // 見た目の画像の高さ
+	hitboxWidth: 10, // ★当たり判定の幅（小さくする）
+	hitboxHeight: 10, // ★当たり判定の高さ（小さくする）
+	attackMultiplier: 1.0,
+	x: (SCREEN_WIDTH - 50) / 2, // widthの変更に合わせて修正
+	y: SCREEN_HEIGHT - 50 - 50, // heightの変更に合わせて修正
 	hp: 200,
 	maxHp: 200,
 	lastHitTime: 0,
@@ -1802,7 +1814,9 @@ function update(deltaTime) {
 	if (currentEliteGreenEnemy && currentEliteGreenEnemy.y > SCREEN_HEIGHT) currentEliteGreenEnemy = null;
 	if (currentEliteBlueEnemy && currentEliteBlueEnemy.y > SCREEN_HEIGHT) currentEliteBlueEnemy = null;
 
-	const playerRect = { x: player.x, y: player.y, width: player.width, height: player.height };
+	const hitboxX = player.x + (player.width - player.hitboxWidth) / 2;
+	const hitboxY = player.y + (player.height - player.hitboxHeight) / 2;
+	const playerRect = { x: hitboxX, y: hitboxY, width: player.hitboxWidth, height: player.hitboxHeight };
 	const eliteEnemies = [
 		currentElitePurple,
 		currentEliteOrange,
@@ -2395,8 +2409,15 @@ function draw() {
 
 	// --- プレイヤー描画 ---
 	if (!(currentTime - player.lastHitTime < player.invincibilityDuration && Math.floor(currentTime / 100) % 2 === 0)) {
-		ctx.fillStyle = COLORS.WHITE;
-		ctx.fillRect(player.x, player.y, player.width, player.height);
+		// 画像の読み込みが完了しているかチェック
+		if (playerImageLoaded) {
+			// 画像を描画する
+			ctx.drawImage(playerImage, player.x, player.y, player.width, player.height);
+		} else {
+			// もし画像の読み込みが間に合わなかったら、代わりに白い四角を描画
+			ctx.fillStyle = COLORS.WHITE;
+			ctx.fillRect(player.x, player.y, player.width, player.height);
+		}
 	}
 
 	// --- 各種オブジェクト描画 ---
