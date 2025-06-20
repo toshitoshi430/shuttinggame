@@ -51,10 +51,15 @@ let currentBoss = null;
 let difficultyUpAnimation = { active: false, alpha: 0, startTime: 0 };
 let gameOverTapCount = 0;
 
+// New global variable for cumulative buffs
+let cumulativeBuffsCollected = 0;
+// New animation state for boss absorbing buffs
+let bossAbsorbAnimation = { active: false, alpha: 0, startTime: 0, text: "" };
+
 const player = {
 	width: 20,
 	height: 20,
-	attackMultiplier: 1.0,
+	attackMultiplier: 1.0, // This will be the permanent attack multiplier
 	x: (SCREEN_WIDTH - 20) / 2,
 	y: SCREEN_HEIGHT - 20 - 50,
 	hp: 200,
@@ -64,10 +69,12 @@ const player = {
 	spreadLevel: 0,
 	spreadStartTime: 0,
 	spreadDuration: 10000,
-	rateUpLevel: 0,
-	rateUpStartTime: 0,
+	// ★★★★★ 変更点 ★★★★★
+	// rateUpLevel, rateUpStartTime, rateUpDurationを削除し、
+	// 各スタックの有効期限を管理する配列に変更
+	rateUpTimers: [],
 	rateUpOffsetAngle: 0,
-	rateUpDuration: 10000,
+	// ★★★★★ 変更ここまで ★★★★★
 	shieldLevel: 0,
 	shields: 0,
 	shieldObjectSize: 40,
@@ -100,7 +107,7 @@ class PlayerBullet {
 		this.spawnY = y;
 		this.width = bulletSettings.width;
 		this.height = bulletSettings.height;
-		this.damage = 10 * player.attackMultiplier;
+		this.damage = 10 * player.attackMultiplier; // Use player's permanent attack multiplier
 	}
 	update(deltaTime) {
 		this.y -= bulletSettings.speed * deltaTime;
@@ -121,7 +128,7 @@ class PlayerSpreadBullet {
 		const angleRad = ((angleDeg - 90) * Math.PI) / 180;
 		this.vx = speed * Math.cos(angleRad);
 		this.vy = speed * Math.sin(angleRad);
-		this.damage = 10 * player.attackMultiplier;
+		this.damage = 10 * player.attackMultiplier; // Use player's permanent attack multiplier
 	}
 	update(deltaTime) {
 		this.x += this.vx * deltaTime;
@@ -143,7 +150,7 @@ class PlayerHomingBullet {
 		this.turnSpeed = 20;
 		this.target = target;
 		this.angle = -Math.PI / 2;
-		this.damage = 15 * player.attackMultiplier;
+		this.damage = 15 * player.attackMultiplier; // Use player's permanent attack multiplier
 		this.isExpired = false;
 
 		this.spawnX = x;
@@ -236,9 +243,9 @@ class Enemy {
 	}
 	takeDamage(bullet) {
 		this.hp -= bullet.damage;
-		score += 5;
+		if (!isBossBattleActive) score += 5;
 		if (this.hp <= 0) {
-			score += 10;
+			if (!isBossBattleActive) score += 10;
 			return true;
 		}
 		return false;
@@ -297,7 +304,7 @@ class FreeRoamEnemy {
 	}
 	takeDamage(bullet) {
 		this.hp -= bullet.damage;
-		score += 15;
+		if (!isBossBattleActive) score += 15;
 		if (this.hp <= 0) {
 			return true;
 		}
@@ -495,24 +502,28 @@ class BaseEliteEnemy {
 		this.onDefeat = config.onDefeat;
 	}
 	update(shotCooldown, deltaTime) {
-		this.y += this.speed * deltaTime;
+		if (this.isActive) {
+			this.y += this.speed * deltaTime;
+		}
 	}
 	draw() {
-		ctx.fillStyle = this.color;
-		ctx.fillRect(this.x, this.y, this.width, this.height);
-		const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
-		const hpBarWidth = this.width;
-		const hpRatio = this.hp > 0 ? this.hp / this.maxHp : 0;
-		ctx.fillStyle = COLORS.RED;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 3, hpBarWidth, hpBarHeight);
-		ctx.fillStyle = COLORS.GREEN;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 3, hpBarWidth * hpRatio, hpBarHeight);
+		if (this.isActive) {
+			ctx.fillStyle = this.color;
+			ctx.fillRect(this.x, this.y, this.width, this.height);
+			const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
+			const hpBarWidth = this.width;
+			const hpRatio = this.hp > 0 ? this.hp / this.maxHp : 0;
+			ctx.fillStyle = COLORS.RED;
+			ctx.fillRect(this.x, this.y - hpBarHeight - 3, hpBarWidth, hpBarHeight);
+			ctx.fillStyle = COLORS.GREEN;
+			ctx.fillRect(this.x, this.y - hpBarHeight - 3, hpBarWidth * hpRatio, hpBarHeight);
+		}
 	}
 	takeDamage(bullet) {
 		this.hp -= bullet.damage;
-		score += 5;
+		if (!isBossBattleActive) score += 5;
 		if (this.hp <= 0) {
-			score += 100;
+			if (!isBossBattleActive) score += 100;
 			this.isActive = false;
 			this.onDefeat(this);
 			return true;
@@ -535,6 +546,7 @@ class ElitePurple extends BaseEliteEnemy {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "homing"));
+			cumulativeBuffsCollected++; // Increment cumulative buff count
 		},
 	};
 	constructor(difficulty) {
@@ -544,7 +556,7 @@ class ElitePurple extends BaseEliteEnemy {
 	update(shotCooldown, deltaTime) {
 		super.update(shotCooldown, deltaTime);
 		const currentTime = performance.now();
-		if (currentTime - this.lastShotTime > shotCooldown) {
+		if (this.isActive && currentTime - this.lastShotTime > shotCooldown) {
 			this.shoot();
 			this.lastShotTime = currentTime;
 		}
@@ -635,6 +647,7 @@ class EliteOrange extends BaseEliteEnemy {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "spread"));
+			cumulativeBuffsCollected++; // Increment cumulative buff count
 		},
 	};
 	constructor(difficulty) {
@@ -646,7 +659,7 @@ class EliteOrange extends BaseEliteEnemy {
 	update(orbCooldown, deltaTime) {
 		super.update(orbCooldown, deltaTime);
 		const currentTime = performance.now();
-		if (currentTime - this.lastShotTime > orbCooldown) {
+		if (this.isActive && currentTime - this.lastShotTime > orbCooldown) {
 			this.spawnOrb();
 			this.lastShotTime = currentTime;
 		}
@@ -703,6 +716,7 @@ class ElitePink extends BaseEliteEnemy {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "rateUp"));
+			cumulativeBuffsCollected++; // Increment cumulative buff count
 		},
 	};
 	constructor(difficulty) {
@@ -712,7 +726,7 @@ class ElitePink extends BaseEliteEnemy {
 	update(shotCooldown, deltaTime) {
 		super.update(shotCooldown, deltaTime);
 		const currentTime = performance.now();
-		if (currentTime - this.lastShotTime > shotCooldown) {
+		if (this.isActive && currentTime - this.lastShotTime > shotCooldown) {
 			this.shoot();
 			this.lastShotTime = currentTime;
 		}
@@ -773,7 +787,7 @@ class ObstacleBullet {
 	}
 	takeDamage(bullet) {
 		this.hp -= bullet.damage;
-		score += 1;
+		if (!isBossBattleActive) score += 1;
 		if (this.hp <= 0) {
 			return true;
 		}
@@ -795,6 +809,7 @@ class EliteGreenEnemy extends BaseEliteEnemy {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "shield"));
+			cumulativeBuffsCollected++; // Increment cumulative buff count
 			healthOrbs.push(new HealthOrb(dropX - 20, dropY, 10));
 			healthOrbs.push(new HealthOrb(dropX + 20, dropY, 10));
 		},
@@ -806,7 +821,7 @@ class EliteGreenEnemy extends BaseEliteEnemy {
 	update(shotCooldown, deltaTime) {
 		super.update(shotCooldown, deltaTime);
 		const currentTime = performance.now();
-		if (currentTime - this.lastShotTime > shotCooldown) {
+		if (this.isActive && currentTime - this.lastShotTime > shotCooldown) {
 			this.shoot();
 			this.lastShotTime = currentTime;
 		}
@@ -843,6 +858,7 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 			const dropX = self.x + self.width / 2;
 			const dropY = self.y + self.height / 2;
 			buffOrbs.push(new BuffOrb(dropX, dropY, "range"));
+			cumulativeBuffsCollected++; // Increment cumulative buff count
 		},
 	};
 	constructor(difficulty) {
@@ -853,7 +869,12 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 		super.update(shotCooldown, deltaTime);
 		const currentTime = performance.now();
 
-		if (this.y > 50 && this.activeLasers.length === 0 && currentTime - this.lastShotTime > shotCooldown) {
+		if (
+			this.isActive &&
+			this.y > 50 &&
+			this.activeLasers.length === 0 &&
+			currentTime - this.lastShotTime > shotCooldown
+		) {
 			this.shootBeam(level);
 			this.lastShotTime = currentTime;
 		}
@@ -919,27 +940,27 @@ class BossEnemy extends BaseEliteEnemy {
 
 	update(deltaTime) {
 		// 画面上部に到達するまでは下に移動
-		if (this.y < 80) {
+		if (this.isActive && this.y < 80) {
 			// ボスの初期Y座標が80に達するまで移動
 			this.y += this.speed * deltaTime;
-		} else {
+		} else if (this.isActive) {
 			// ここに到達したら攻撃開始前の時間を短縮
 			// 既存の左右移動ロジック
 			this.x += this.patrolSpeed * this.patrolDirection * deltaTime;
 			if (this.x <= 0 || this.x + this.width >= SCREEN_WIDTH) {
 				this.patrolDirection *= -1;
 			}
+		}
 
-			const currentTime = performance.now();
-			const currentCooldown = this.phaseTimer === 0 ? 500 : this.attackCooldown;
+		const currentTime = performance.now();
+		const currentCooldown = this.phaseTimer === 0 ? 500 : this.attackCooldown;
 
-			if (currentTime - this.phaseTimer > currentCooldown) {
-				this.shoot();
-				this.phaseTimer = currentTime;
-				// 修正: 攻撃フェーズをランダムに選択
-				this.attackPhase = Math.floor(Math.random() * 5); // 0から4のランダムな整数
-				this.attackCooldown = Math.max(800, 3000 - (this.difficulty.level - 1) * 100);
-			}
+		if (this.isActive && currentTime - this.phaseTimer > currentCooldown && this.y >= 80) {
+			this.shoot();
+			this.phaseTimer = currentTime;
+			// 修正: 攻撃フェーズをランダムに選択
+			this.attackPhase = Math.floor(Math.random() * 5); // 0から4のランダムな整数
+			this.attackCooldown = Math.max(800, 3000 - (this.difficulty.level - 1) * 100);
 		}
 
 		this.bullets.forEach((b, index) => {
@@ -1058,7 +1079,7 @@ class BossEnemy extends BaseEliteEnemy {
 		for (let i = 0; i < numHomingBullets; i++) {
 			const angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
 			this.bullets.push(
-				new HomingBullet(bulletX, bulletY, angle, speed, 1.5, COLORS.YELLOW, 20, lifetime, isInvulnerable)
+				new HomingBullet(bulletX, bulletY, angle, speed, 1.5, COLORS.PURPLE, 20, lifetime, isInvulnerable)
 			);
 			// isInvulnerable をコンストラクタに渡す
 		}
@@ -1066,17 +1087,32 @@ class BossEnemy extends BaseEliteEnemy {
 
 	shootLaser() {
 		const bossLaserThickness = 80;
-		let lockOnTime = 800;
-		let beamDuration = 700; // EnemyLaserクラスのbeamDurationも考慮
+		let lockOnTime;
 
-		// レベル10以上で強化
-		if (this.difficulty.level >= 10) {
-			lockOnTime = 600; // ロックオン時間を短縮
+		// --- 新しい計算ロジック ---
+
+		// 基準となる数値を設定
+		const baseLevel = 10; // このレベルから計算を開始
+		const baseTime = 800; // レベル10の時のロックオン時間 (ミリ秒)
+		const multiplier = 0.95; // 10レベルごとに掛ける倍率
+
+		if (this.difficulty.level < baseLevel) {
+			// レベル10未満の場合、固定の長めの時間を設定
+			lockOnTime = 1000;
+		} else {
+			// 基準レベルから、現在のレベルが「10レベル単位で何段階上か」を計算
+			// 例: Level 10-19 -> 0, Level 20-29 -> 1
+			const levelTiers = Math.floor((this.difficulty.level - baseLevel) / 10);
+
+			// (基本時間) × (倍率) ^ (段階数) でロックオン時間を計算
+			lockOnTime = baseTime * Math.pow(multiplier, levelTiers);
 		}
-		// レベル20以上でさらに強化
-		if (this.difficulty.level >= 20) {
-			lockOnTime = 400; // さらにロックオン時間を短縮
-		}
+
+		// 安全装置：ロックオン時間が短くなりすぎないように下限を設定（例: 0.25秒）
+		lockOnTime = Math.max(lockOnTime, 250);
+
+		// --- ロジックここまで ---
+
 		this.bullets.push(new EnemyLaser(this, player.x, player.y, lockOnTime, bossLaserThickness));
 	}
 
@@ -1133,14 +1169,14 @@ class BossEnemy extends BaseEliteEnemy {
 		let damageDealt = bullet.damage;
 		if (checkCollision(bullet, weakPointRect)) {
 			damageDealt *= 3;
-			score += 20;
+			if (!isBossBattleActive) score += 20;
 		}
 
 		this.hp -= damageDealt;
-		score += 5;
+		if (!isBossBattleActive) score += 5;
 
 		if (this.hp <= 0) {
-			score += 5000;
+			if (!isBossBattleActive) score += 5000;
 			this.isActive = false;
 			this.onDefeat(this);
 			return true;
@@ -1149,24 +1185,26 @@ class BossEnemy extends BaseEliteEnemy {
 	}
 
 	draw() {
-		ctx.fillStyle = this.color;
-		ctx.fillRect(this.x, this.y, this.width, this.height);
+		if (this.isActive) {
+			ctx.fillStyle = this.color;
+			ctx.fillRect(this.x, this.y, this.width, this.height);
 
-		ctx.fillStyle = COLORS.YELLOW;
-		ctx.fillRect(
-			this.x + this.weakPoint.xOffset,
-			this.y + this.weakPoint.yOffset,
-			this.weakPoint.width,
-			this.weakPoint.height
-		);
+			ctx.fillStyle = COLORS.YELLOW;
+			ctx.fillRect(
+				this.x + this.weakPoint.xOffset,
+				this.y + this.weakPoint.yOffset,
+				this.weakPoint.width,
+				this.weakPoint.height
+			);
 
-		const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
-		const hpBarWidth = this.width;
-		const hpRatio = this.hp > 0 ? this.hp / this.maxHp : 0;
-		ctx.fillStyle = COLORS.RED;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 5, hpBarWidth, hpBarHeight);
-		ctx.fillStyle = COLORS.LIME_GREEN;
-		ctx.fillRect(this.x, this.y - hpBarHeight - 5, hpBarWidth * hpRatio, hpBarHeight);
+			const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
+			const hpBarWidth = this.width;
+			const hpRatio = this.hp > 0 ? this.hp / this.maxHp : 0;
+			ctx.fillStyle = COLORS.RED;
+			ctx.fillRect(this.x, this.y - hpBarHeight - 5, hpBarWidth, hpBarHeight);
+			ctx.fillStyle = COLORS.LIME_GREEN;
+			ctx.fillRect(this.x, this.y - hpBarHeight - 5, hpBarWidth * hpRatio, hpBarHeight);
+		}
 
 		this.bullets.forEach((b) => b.draw());
 	}
@@ -1366,6 +1404,26 @@ function startBossBattle() {
 	enemies = [];
 	freeRoamEnemies = [];
 	explosionBullets = [];
+
+	// Clear all existing buff orbs from the screen, simulating absorption
+	buffOrbs = [];
+	healthOrbs = []; // Also clear health orbs if they are considered "buffs" in this context
+
+	// Reset player's temporary buffs
+	player.spreadLevel = 0;
+	player.spreadStartTime = 0;
+	// ★★★★★ 変更点 ★★★★★
+	// レートアップバフのタイマーをリセット
+	player.rateUpTimers = [];
+	// ★★★★★ 変更ここまで ★★★★★
+	player.shieldLevel = 0;
+	player.shields = 0;
+	player.rangeLevel = 0;
+	player.rangeStartTime = 0;
+	player.beamCharges = 0;
+	player.homingLevel = 0;
+	player.homingStartTime = 0;
+
 	[currentElitePurple, currentEliteOrange, currentElitePink, currentEliteGreenEnemy, currentEliteBlueEnemy].forEach(
 		(elite) => {
 			if (elite) elite.bullets = [];
@@ -1412,13 +1470,18 @@ function resetGame() {
 	player.x = (SCREEN_WIDTH - player.width) / 2;
 	player.y = SCREEN_HEIGHT - player.height - 30;
 	player.spreadLevel = 0;
-	player.rateUpLevel = 0;
+	// ★★★★★ 変更点 ★★★★★
+	// ゲームリセット時にrateUpTimersを空の配列に
+	player.rateUpTimers = [];
+	// ★★★★★ 変更ここまで ★★★★★
 	player.shieldLevel = 0;
 	player.shields = 0;
 	player.rangeLevel = 0;
 	player.beamCharges = 0;
 	player.homingLevel = 0;
-	player.attackMultiplier = 1.0;
+	player.attackMultiplier = 1.0; // Reset permanent attack multiplier
+	cumulativeBuffsCollected = 0; // Reset cumulative buffs on new game
+
 	bullets = [];
 	enemies = [];
 	freeRoamEnemies = [];
@@ -1441,6 +1504,16 @@ function resetGame() {
 	lastEliteSlotSpawnTime = 0;
 }
 
+/**
+ * ===================================================================================
+ *
+ * update関数の修正箇所
+ *
+ * - プレイヤーとRewardOrb（★マークのオーブ）の衝突判定内に、
+ * 全種類のバフを1段階ずつレベルアップさせる処理を追加しました。
+ *
+ * ===================================================================================
+ */
 function update(deltaTime) {
 	if (gameOver) {
 		window.addEventListener(
@@ -1479,11 +1552,21 @@ function update(deltaTime) {
 	if (player.homingLevel > 0) {
 		player.shieldOffsetAngle = (player.shieldOffsetAngle + 90 * (deltaTime || 0)) % 360;
 	}
-	if (player.rateUpLevel > 0) {
+	// ★★★★★ 変更点 ★★★★★
+	// rateUpLevel > 0 の代わりに rateUpTimers.length > 0 で判定
+	if (player.rateUpTimers.length > 0) {
 		player.rateUpOffsetAngle = (player.rateUpOffsetAngle + 180 * deltaTime) % 360;
 	}
+	// 古いrateUpのタイマー処理を削除
+	// ★★★★★ 変更ここまで ★★★★★
+
+	// ★★★★★ 変更点 ★★★★★
+	// 新しいレートアップバフの有効期限切れ処理
+	// 有効期限(expiry > currentTime)を過ぎたタイマーを配列から除去する
+	player.rateUpTimers = player.rateUpTimers.filter((expiry) => expiry > currentTime);
+	// ★★★★★ 変更ここまで ★★★★★
+
 	if (player.spreadLevel > 0 && currentTime - player.spreadStartTime > player.spreadDuration) player.spreadLevel = 0;
-	if (player.rateUpLevel > 0 && currentTime - player.rateUpStartTime > player.rateUpDuration) player.rateUpLevel = 0;
 	if (player.rangeLevel > 0 && currentTime - player.rangeStartTime > player.rangeDuration) {
 		player.rangeLevel = 0;
 		player.beamCharges = 0;
@@ -1500,15 +1583,18 @@ function update(deltaTime) {
 
 	if (isInputActive) {
 		player.x = inputX - player.width / 2;
-		player.y = inputY - player.height / 2;
+		player.y = inputY - player.height / 2 - 150;
 	}
 	player.x = Math.max(0, Math.min(player.x, SCREEN_WIDTH - player.width));
 	player.y = Math.max(0, Math.min(player.y, SCREEN_HEIGHT - player.height));
 
-	let rateMultiplier = 1;
-	if (player.rateUpLevel > 0) {
-		rateMultiplier = player.rateUpLevel * 1.5;
-	}
+	// ★★★★★ 変更点 ★★★★★
+	// レートアップ効果の計算方法を変更
+	// スタック数(rateUpTimers.length)に応じて、1.5のべき乗でレートを乗算
+	const rateUpCount = player.rateUpTimers.length;
+	const rateMultiplier = rateUpCount > 0 ? Math.pow(1.5, rateUpCount) : 1;
+	// ★★★★★ 変更ここまで ★★★★★
+
 	const cooldown = bulletSettings.cooldown / rateMultiplier;
 	if (currentTime - lastShotTime > cooldown) {
 		const bulletXCenter = player.x + player.width / 2;
@@ -1744,7 +1830,7 @@ function update(deltaTime) {
 				if (checkCollision(bullet, eliteBullet)) {
 					if (eliteBullet.takeDamage(bullet)) {
 						currentElitePurple.bullets.splice(k, 1);
-						score += 1;
+						if (!isBossBattleActive) score += 1;
 					}
 					bullets.splice(i, 1);
 					bulletRemoved = true;
@@ -1757,19 +1843,13 @@ function update(deltaTime) {
 		if (currentBoss) {
 			for (let k = currentBoss.bullets.length - 1; k >= 0; k--) {
 				const bossBullet = currentBoss.bullets[k];
-				if (checkCollision(bullet, bossBullet)) {
-					// ここで、HomingBullet（迎撃不可）は takeDamage を持っているが何もしないので、
-					// BarrageOrbとHomingBullet（迎撃不可）以外の、破壊可能なボスの弾にダメージを与える
-					if (bossBullet instanceof ObstacleBullet || typeof bossBullet.takeDamage === "function") {
-						// ObstacleBullet も対象に含める
-						if (bossBullet.takeDamage(bullet)) {
-							// ダメージを与えて、破壊されたら
-							currentBoss.bullets.splice(k, 1); // ボスの弾を削除
-						}
+				// 変更点: ボスの弾が ObstacleBullet (壁) の場合のみ衝突判定を行う
+				if (bossBullet instanceof ObstacleBullet && checkCollision(bullet, bossBullet)) {
+					if (bossBullet.takeDamage(bullet)) {
+						currentBoss.bullets.splice(k, 1); // ボスの弾（壁）を削除
 					}
-					// ★ プレイヤーの弾は、敵の弾に当たれば（破壊可能かどうかにかかわらず）常に消滅させる
 					bullets.splice(i, 1); // プレイヤーの弾を削除
-					bulletRemoved = true; // 弾が削除されたフラグを設定
+					bulletRemoved = true;
 					break; // このプレイヤー弾に対するボスの弾のチェックを終了
 				}
 			}
@@ -1860,7 +1940,7 @@ function update(deltaTime) {
 						if (eliteBullet.takeDamage(pBullet)) {
 							// 紫エリートの弾にダメージ
 							currentElitePurple.bullets.splice(k, 1); // 破壊されたら紫エリートの弾を削除
-							score += 1; // 撃墜スコア
+							if (!isBossBattleActive) score += 1; // 撃墜スコア
 						}
 						playerHomingBullets.splice(i, 1); // 追尾弾も消す
 						bulletRemoved = true;
@@ -2054,8 +2134,42 @@ function update(deltaTime) {
 		const orb = buffOrbs[i];
 		if (checkCollision(playerRect, orb)) {
 			if (orb instanceof RewardOrb) {
+				// HP全回復と攻撃力ボーナス
 				player.hp = player.maxHp;
-				player.attackMultiplier += 0.25;
+				player.attackMultiplier += cumulativeBuffsCollected * 0.01;
+				player.attackMultiplier = Math.max(1.0, player.attackMultiplier);
+				cumulativeBuffsCollected = 0;
+
+				// 全種類のバフを1段階ずつレベルアップ
+				// 1. Spread
+				player.spreadLevel = Math.min(3, player.spreadLevel + 1);
+				player.spreadStartTime = currentTime;
+
+				// 2. RateUp
+				// ★★★★★ 変更点 ★★★★★
+				// RewardOrb取得時にも新しいタイマーを追加
+				player.rateUpTimers.push(currentTime + 10000); // 10秒のタイマーを追加
+				// ★★★★★ 変更ここまで ★★★★★
+
+				// 3. Shield
+				player.shieldLevel = Math.min(3, player.shieldLevel + 1);
+				const shieldCounts = [0, 3, 4, 5];
+				player.shields = shieldCounts[player.shieldLevel];
+
+				// 4. Range
+				if (player.rangeLevel === 0) {
+					player.beamCharges = 3;
+				} else {
+					player.beamCharges += 2;
+				}
+				player.rangeLevel = Math.min(3, player.rangeLevel + 1);
+				player.rangeStartTime = currentTime;
+				player.lastBeamTime = currentTime;
+
+				// 5. Homing
+				player.homingLevel = Math.min(3, player.homingLevel + 1);
+				player.homingStartTime = currentTime;
+
 				buffOrbs.splice(i, 1);
 				continue;
 			}
@@ -2064,10 +2178,13 @@ function update(deltaTime) {
 					player.spreadLevel = Math.min(3, player.spreadLevel + 1);
 					player.spreadStartTime = currentTime;
 					break;
+				// ★★★★★ 変更点 ★★★★★
+				// レートアップバフ取得時の処理を変更
 				case "rateUp":
-					player.rateUpLevel = Math.min(3, player.rateUpLevel + 1);
-					player.rateUpStartTime = currentTime;
+					// 上限なく、タイマー配列に新しい有効期限を追加する
+					player.rateUpTimers.push(currentTime + 10000); // 10秒のタイマー
 					break;
+				// ★★★★★ 変更ここまで ★★★★★
 				case "shield":
 					player.shieldLevel = Math.min(3, player.shieldLevel + 1);
 					const shieldCounts = [0, 3, 4, 5];
@@ -2103,12 +2220,18 @@ function update(deltaTime) {
 	);
 	healthOrbs = healthOrbs.filter((o) => o.y < SCREEN_HEIGHT);
 	buffOrbs = buffOrbs.filter((o) => o.y < SCREEN_HEIGHT);
-	if (currentElitePurple && !currentElitePurple.isActive) currentElitePurple = null;
-	if (currentEliteOrange && !currentEliteOrange.isActive) currentEliteOrange = null;
-	if (currentElitePink && !currentElitePink.isActive) currentElitePink = null;
-	if (currentEliteGreenEnemy && !currentEliteGreenEnemy.isActive) currentEliteGreenEnemy = null;
-	if (currentEliteBlueEnemy && !currentEliteBlueEnemy.isActive) currentEliteBlueEnemy = null;
-	if (currentBoss && !currentBoss.isActive) currentBoss = null;
+
+	if (currentElitePurple && !currentElitePurple.isActive && currentElitePurple.bullets.length === 0)
+		currentElitePurple = null;
+	if (currentEliteOrange && !currentEliteOrange.isActive && currentEliteOrange.barrageOrbs.length === 0)
+		currentEliteOrange = null;
+	if (currentElitePink && !currentElitePink.isActive && currentElitePink.bullets.length === 0) currentElitePink = null;
+	if (currentEliteGreenEnemy && !currentEliteGreenEnemy.isActive && currentEliteGreenEnemy.bullets.length === 0)
+		currentEliteGreenEnemy = null;
+	if (currentEliteBlueEnemy && !currentEliteBlueEnemy.isActive && currentEliteBlueEnemy.activeLasers.length === 0)
+		currentEliteBlueEnemy = null;
+	if (currentBoss && !currentBoss.isActive && currentBoss.bullets.length === 0) currentBoss = null;
+
 	if (player.hp <= 0) {
 		gameOver = true;
 	}
@@ -2129,56 +2252,66 @@ function draw() {
 		return;
 	}
 	const currentTime = performance.now();
-	if (player.rateUpLevel > 0) {
-		const centerX = player.x + player.width / 2;
-		const centerY = player.y + player.height / 2;
-		const numTriangles = player.rateUpLevel;
-		const orbitRadius = player.width / 2 + 20;
-		const triangleSize = 15;
 
-		for (let i = 0; i < numTriangles; i++) {
-			const angleRad = ((player.rateUpOffsetAngle + i * (360 / numTriangles)) * Math.PI) / 180;
+	// --- バフエフェクトの描画（点滅処理付き）---
+	// ★★★★★ 変更点 ★★★★★
+	// rateUpLevelの代わりにrateUpTimers.lengthで描画を判定
+	const rateUpCount = player.rateUpTimers.length;
+	if (rateUpCount > 0) {
+		// 一番早く期限切れになるタイマーを見つける
+		const nextExpiry = Math.min(...player.rateUpTimers);
+		const remainingTime = nextExpiry - currentTime;
+		const isExpiring = remainingTime < 3000;
+		const shouldDraw = !isExpiring || Math.floor(currentTime / 150) % 2 === 0;
 
-			const triX = centerX + orbitRadius * Math.cos(angleRad);
-			const triY = centerY + orbitRadius * Math.sin(angleRad);
-
-			ctx.fillStyle = COLORS.PINK;
-			ctx.save();
-			ctx.translate(triX, triY);
-			ctx.rotate(angleRad + Math.PI / 2);
-
-			ctx.beginPath();
-			ctx.moveTo(0, -triangleSize / 2);
-			ctx.lineTo(-triangleSize / 2, triangleSize / 2);
-			ctx.lineTo(triangleSize / 2, triangleSize / 2);
-			ctx.closePath();
-			ctx.fill();
-
-			ctx.restore();
+		if (shouldDraw) {
+			const centerX = player.x + player.width / 2;
+			const centerY = player.y + player.height / 2;
+			// スタック数に応じて描画する三角形の数を変更
+			const numTriangles = rateUpCount;
+			const orbitRadius = player.width / 2 + 20;
+			const triangleSize = 15;
+			for (let i = 0; i < numTriangles; i++) {
+				const angleRad = ((player.rateUpOffsetAngle + i * (360 / numTriangles)) * Math.PI) / 180;
+				const triX = centerX + orbitRadius * Math.cos(angleRad);
+				const triY = centerY + orbitRadius * Math.sin(angleRad);
+				ctx.fillStyle = COLORS.PINK;
+				ctx.save();
+				ctx.translate(triX, triY);
+				ctx.rotate(angleRad + Math.PI / 2);
+				ctx.beginPath();
+				ctx.moveTo(0, -triangleSize / 2);
+				ctx.lineTo(-triangleSize / 2, triangleSize / 2);
+				ctx.lineTo(triangleSize / 2, triangleSize / 2);
+				ctx.closePath();
+				ctx.fill();
+				ctx.restore();
+			}
 		}
 	}
-	if (!(currentTime - player.lastHitTime < player.invincibilityDuration && Math.floor(currentTime / 100) % 2 === 0)) {
-		ctx.fillStyle = COLORS.WHITE;
-		ctx.fillRect(player.x, player.y, player.width, player.height);
-	}
+	// ★★★★★ 変更ここまで ★★★★★
 
 	if (player.homingLevel > 0) {
-		const centerX = player.x + player.width / 2;
-		const centerY = player.y + player.height / 2;
-		for (let i = 0; i < player.homingLevel; i++) {
-			const angleOffset = (i * (2 * Math.PI)) / player.homingLevel;
-			const angleRad = (player.shieldOffsetAngle * Math.PI) / 180 + angleOffset;
-			const dist = player.width / 2 + 40;
-			const pX = centerX + dist * Math.cos(angleRad);
-			const pY = centerY + dist * Math.sin(angleRad);
-			const squareSize = 20;
-
-			ctx.fillStyle = COLORS.PURPLE;
-			ctx.save();
-			ctx.translate(pX, pY);
-			ctx.rotate(angleRad + Math.PI / 4);
-			ctx.fillRect(-squareSize / 2, -squareSize / 2, squareSize, squareSize);
-			ctx.restore();
+		const remainingTime = player.homingDuration - (currentTime - player.homingStartTime);
+		const isExpiring = remainingTime < 3000;
+		const shouldDraw = !isExpiring || Math.floor(currentTime / 150) % 2 === 0;
+		if (shouldDraw) {
+			const centerX = player.x + player.width / 2;
+			const centerY = player.y + player.height / 2;
+			for (let i = 0; i < player.homingLevel; i++) {
+				const angleOffset = (i * (2 * Math.PI)) / player.homingLevel;
+				const angleRad = (player.shieldOffsetAngle * Math.PI) / 180 + angleOffset;
+				const dist = player.width / 2 + 40;
+				const pX = centerX + dist * Math.cos(angleRad);
+				const pY = centerY + dist * Math.sin(angleRad);
+				const squareSize = 20;
+				ctx.fillStyle = COLORS.PURPLE;
+				ctx.save();
+				ctx.translate(pX, pY);
+				ctx.rotate(angleRad + Math.PI / 4);
+				ctx.fillRect(-squareSize / 2, -squareSize / 2, squareSize, squareSize);
+				ctx.restore();
+			}
 		}
 	}
 
@@ -2200,23 +2333,38 @@ function draw() {
 	}
 
 	if (player.beamCharges > 0) {
-		const beamAngle = (player.shieldOffsetAngle * -1) % 360;
-		for (let i = 0; i < player.beamCharges; i++) {
-			const angleRad = ((beamAngle + i * 120) * Math.PI) / 180;
-			const dist = player.width + 20;
-			const x1 = player.x + player.width / 2 + Math.cos(angleRad) * dist;
-			const y1 = player.y + player.height / 2 + Math.sin(angleRad) * dist;
-			ctx.fillStyle = COLORS.BLUE;
-			ctx.beginPath();
-			ctx.moveTo(x1, y1 - 10);
-			ctx.lineTo(x1 - 8.66, y1 + 5);
-			ctx.lineTo(x1 + 8.66, y1 + 5);
-			ctx.closePath();
-			ctx.fill();
+		let shouldDraw = true;
+		if (player.rangeLevel > 0) {
+			const remainingTime = player.rangeDuration - (currentTime - player.rangeStartTime);
+			const isExpiring = remainingTime < 3000;
+			shouldDraw = !isExpiring || Math.floor(currentTime / 150) % 2 === 0;
+		}
+		if (shouldDraw) {
+			const beamAngle = (player.shieldOffsetAngle * -1) % 360;
+			for (let i = 0; i < player.beamCharges; i++) {
+				const angleRad = ((beamAngle + i * 120) * Math.PI) / 180;
+				const dist = player.width + 20;
+				const x1 = player.x + player.width / 2 + Math.cos(angleRad) * dist;
+				const y1 = player.y + player.height / 2 + Math.sin(angleRad) * dist;
+				ctx.fillStyle = COLORS.BLUE;
+				ctx.beginPath();
+				ctx.moveTo(x1, y1 - 10);
+				ctx.lineTo(x1 - 8.66, y1 + 5);
+				ctx.lineTo(x1 + 8.66, y1 + 5);
+				ctx.closePath();
+				ctx.fill();
+			}
 		}
 	}
-	activeBeams.forEach((b) => b.draw());
 
+	// --- プレイヤー描画 ---
+	if (!(currentTime - player.lastHitTime < player.invincibilityDuration && Math.floor(currentTime / 100) % 2 === 0)) {
+		ctx.fillStyle = COLORS.WHITE;
+		ctx.fillRect(player.x, player.y, player.width, player.height);
+	}
+
+	// --- 各種オブジェクト描画 ---
+	activeBeams.forEach((b) => b.draw());
 	bullets.forEach((b) => b.draw());
 	playerHomingBullets.forEach((b) => b.draw());
 	enemies.forEach((e) => e.draw());
@@ -2230,6 +2378,23 @@ function draw() {
 	if (currentEliteGreenEnemy) currentEliteGreenEnemy.draw();
 	if (currentEliteBlueEnemy) currentEliteBlueEnemy.draw();
 	if (currentBoss) currentBoss.draw();
+
+	// --- アニメーション描画 ---
+	if (bossAbsorbAnimation.active) {
+		const elapsed = currentTime - bossAbsorbAnimation.startTime;
+		const animText = bossAbsorbAnimation.text;
+		const animDuration = bossAbsorbAnimation.duration;
+		if (elapsed < animDuration) {
+			const size = 60 + (elapsed / animDuration) * 40;
+			const alpha = Math.max(0, 1 - elapsed / animDuration);
+			ctx.font = `bold ${size}px sans-serif`;
+			ctx.fillStyle = `rgba(255, 100, 0, ${alpha})`;
+			ctx.textAlign = "center";
+			ctx.fillText(animText, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+		} else {
+			bossAbsorbAnimation.active = false;
+		}
+	}
 
 	if (difficultyUpAnimation.active) {
 		const elapsed = currentTime - difficultyUpAnimation.startTime;
@@ -2247,77 +2412,120 @@ function draw() {
 		}
 	}
 
-	const hpBarX = 20;
-	const hpBarY = 140;
-	const hpBarWidth = 30;
-	const hpBarHeight = SCREEN_HEIGHT - 200;
-	ctx.fillStyle = "rgba(100,0,0,0.5)";
+	// --- UI描画 ---
+
+	// HPバー (画面下、横向き)
+	const hpBarHeight = 25;
+	const hpBarWidth = SCREEN_WIDTH * 0.7;
+	const hpBarX = (SCREEN_WIDTH - hpBarWidth) / 2;
+	const hpBarY = SCREEN_HEIGHT - hpBarHeight - 20;
+
+	ctx.fillStyle = "rgba(100,0,0,0.5)"; // 背景（赤）
 	ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
+
 	const hpRatio = player.hp > 0 ? player.hp / player.maxHp : 0;
+
+	ctx.fillStyle = "rgba(0,255,0,0.8)"; // 通常HP（緑）
+	ctx.fillRect(hpBarX, hpBarY, hpBarWidth * Math.min(1, hpRatio), hpBarHeight);
+
 	if (player.hp > player.maxHp) {
 		const overHealRatio = (player.hp - player.maxHp) / player.maxHp;
-		ctx.fillStyle = "rgba(0,150,255,0.8)";
-		ctx.fillRect(
-			hpBarX,
-			hpBarY + hpBarHeight * (1 - Math.min(1, overHealRatio)),
-			hpBarWidth,
-			hpBarHeight * Math.min(1, overHealRatio)
-		);
+		ctx.fillStyle = "rgba(0,150,255,0.8)"; // オーバーヒール（青）
+		ctx.fillRect(hpBarX, hpBarY, hpBarWidth * Math.min(1, overHealRatio), hpBarHeight);
 	}
-	ctx.fillStyle = "rgba(0,255,0,0.8)";
-	ctx.fillRect(
-		hpBarX,
-		hpBarY + hpBarHeight * (1 - Math.min(1, hpRatio)),
-		hpBarWidth,
-		hpBarHeight * Math.min(1, hpRatio)
-	);
-	ctx.strokeStyle = "#FFF";
+
+	ctx.strokeStyle = "#FFF"; // 枠線
 	ctx.strokeRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight);
-	ctx.fillStyle = COLORS.WHITE;
-	ctx.font = `20px sans-serif`;
+
+	ctx.fillStyle = COLORS.WHITE; // HPテキスト
+	ctx.font = `18px sans-serif`;
 	ctx.textAlign = "center";
-	ctx.fillText(`${Math.round(player.hp)}`, hpBarX + hpBarWidth / 2, hpBarY - 15);
+	ctx.textBaseline = "middle";
+	ctx.fillText(`${Math.round(player.hp)} / ${player.maxHp}`, hpBarX + hpBarWidth / 2, hpBarY + hpBarHeight / 2);
+
+	// バフアイコン (HPバーの上、横向き中央揃え)
+	const activeBuffs = [];
+	if (player.spreadLevel > 0) {
+		const remaining = 1 - (currentTime - player.spreadStartTime) / player.spreadDuration;
+		activeBuffs.push({ type: "spread", value: remaining, level: player.spreadLevel });
+	}
+	if (player.shields > 0) {
+		activeBuffs.push({ type: "shield", value: player.shields, level: player.shieldLevel });
+	}
+	// ★★★★★ 変更点 ★★★★★
+	// レートアップバフのUI表示ロジックを変更
+	const currentRateUpCount = player.rateUpTimers.length;
+	if (currentRateUpCount > 0) {
+		// 次に切れるタイマーの残り時間を計算
+		const nextExpiry = Math.min(...player.rateUpTimers);
+		// 各スタックの基本時間は10秒(10000ms)
+		const remaining = (nextExpiry - currentTime) / 10000;
+		activeBuffs.push({ type: "rateUp", value: remaining, level: currentRateUpCount });
+	}
+	// ★★★★★ 変更ここまで ★★★★★
+	if (player.rangeLevel > 0 && player.beamCharges > 0) {
+		const remaining = 1 - (currentTime - player.rangeStartTime) / player.rangeDuration;
+		activeBuffs.push({ type: "range", value: player.beamCharges, level: player.rangeLevel, remaining: remaining });
+	}
+	if (player.homingLevel > 0) {
+		const remaining = 1 - (currentTime - player.homingStartTime) / player.homingDuration;
+		activeBuffs.push({ type: "homing", value: remaining, level: player.homingLevel });
+	}
 
 	const buffIconSize = 40;
-	let buffIconY = 20;
-	const buffIconX = SCREEN_WIDTH - buffIconSize - 20;
-	const drawBuffIcon = (type, value, level = 0) => {
-		let color = COLORS.WHITE;
-		let text = ""; // text 変数を初期化
+	const buffIconSpacing = 10;
+	const totalBuffsWidth = activeBuffs.length * buffIconSize + Math.max(0, activeBuffs.length - 1) * buffIconSpacing;
+	let currentBuffIconX = (SCREEN_WIDTH - totalBuffsWidth) / 2;
+	const buffIconY = hpBarY - buffIconSize - 10;
 
-		switch (type) {
+	const drawBuffIcon = (buff) => {
+		let color = COLORS.WHITE;
+		let text = "";
+		let remainingPercent = 0;
+		let showTimer = false;
+
+		switch (buff.type) {
 			case "spread":
 				color = COLORS.ORANGE;
+				text = `x${buff.level}`;
+				remainingPercent = buff.value;
+				showTimer = true;
 				break;
 			case "rateUp":
 				color = COLORS.PINK;
+				text = `x${buff.level}`;
+				remainingPercent = buff.value;
+				showTimer = true;
 				break;
 			case "range":
 				color = COLORS.BLUE;
-				text = value; // ここで value (ビームチャージ数) を text に設定
+				text = buff.value;
+				remainingPercent = buff.remaining;
+				showTimer = true;
 				break;
 			case "shield":
 				color = COLORS.LIGHT_BLUE;
-				text = value;
+				text = buff.value;
 				break;
 			case "homing":
 				color = COLORS.PURPLE;
+				text = `x${buff.level}`;
+				remainingPercent = buff.value;
+				showTimer = true;
 				break;
 		}
 
 		ctx.fillStyle = color;
 		ctx.beginPath();
-		ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+		ctx.arc(currentBuffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
 		ctx.fill();
 
-		// ★ 修正: type が "shield" または "range" でない場合に残り時間ゲージを描画
-		if (type !== "shield" && type !== "range") {
-			const remainingPercent = value; // spread, rateUp, homing の remainingPercent
+		if (showTimer) {
 			ctx.fillStyle = "rgba(0,0,0,0.5)";
 			ctx.beginPath();
-			ctx.moveTo(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2);
+			ctx.moveTo(currentBuffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2);
 			ctx.arc(
-				buffIconX + buffIconSize / 2,
+				currentBuffIconX + buffIconSize / 2,
 				buffIconY + buffIconSize / 2,
 				buffIconSize / 2,
 				-Math.PI / 2,
@@ -2329,50 +2537,33 @@ function draw() {
 		}
 
 		ctx.strokeStyle = COLORS.WHITE;
+		ctx.lineWidth = 2;
 		ctx.beginPath();
-		ctx.arc(buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
+		ctx.arc(currentBuffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2, buffIconSize / 2, 0, 2 * Math.PI);
 		ctx.stroke();
 
 		ctx.fillStyle = COLORS.WHITE;
-		ctx.font = "bold 24px sans-serif";
+		ctx.font = "bold 20px sans-serif";
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
-
-		if (text) {
-			// text が設定されている場合 (shield, range)
-			ctx.fillText(text, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
-		} else if (level > 0) {
-			// level が設定されている場合 (spread, rateUp, homing)
-			ctx.fillText(level, buffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
-		}
-
-		buffIconY += buffIconSize + 10;
+		ctx.fillText(text, currentBuffIconX + buffIconSize / 2, buffIconY + buffIconSize / 2 + 2);
 	};
 
-	if (player.spreadLevel > 0) {
-		const remaining = 1 - (currentTime - player.spreadStartTime) / player.spreadDuration;
-		drawBuffIcon("spread", remaining, player.spreadLevel);
-	}
-	if (player.shields > 0) {
-		drawBuffIcon("shield", player.shields);
-	}
-	if (player.rateUpLevel > 0) {
-		const remaining = 1 - (currentTime - player.rateUpStartTime) / player.rateUpDuration;
-		drawBuffIcon("rateUp", remaining, player.rateUpLevel);
-	}
-	if (player.rangeLevel > 0 && player.beamCharges > 0) {
-		drawBuffIcon("range", player.beamCharges);
-	}
-	if (player.homingLevel > 0) {
-		const remaining = 1 - (currentTime - player.homingStartTime) / player.homingDuration;
-		drawBuffIcon("homing", remaining, player.homingLevel);
+	for (const buff of activeBuffs) {
+		drawBuffIcon(buff);
+		currentBuffIconX += buffIconSize + buffIconSpacing;
 	}
 
+	// スコア、レベル、その他の情報
 	ctx.fillStyle = COLORS.WHITE;
 	ctx.font = `24px sans-serif`;
 	ctx.textAlign = "left";
 	ctx.fillText(`Score: ${score}`, 20, 40);
 	ctx.fillText(`Level: ${currentDifficultyLevel}`, 20, 70);
+
+	ctx.textAlign = "right";
+	ctx.fillText(`Buffs: ${cumulativeBuffsCollected}`, SCREEN_WIDTH - 20, 40);
+	ctx.fillText(`ATK: x${player.attackMultiplier.toFixed(2)}`, SCREEN_WIDTH - 20, 70);
 }
 
 function gameLoop(timestamp) {
