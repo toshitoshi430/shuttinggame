@@ -1,15 +1,22 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+//プレイヤー画像
 const playerImage = new Image();
-let playerImageLoaded = false; // 画像が読み込めたかを確認するための変数
-
-// 画像の読み込みが完了したら、フラグをtrueにする
+let playerImageLoaded = false;
 playerImage.onload = function () {
 	playerImageLoaded = true;
 };
-// 読み込む画像ファイルを指定（ファイル名はご自身のものに合わせてください）
 playerImage.src = "/static/Rocket.png";
+
+// ボス画像
+const bossImage = new Image();
+let bossImageLoaded = false;
+
+bossImage.onload = function () {
+	bossImageLoaded = true;
+};
+bossImage.src = "/static/boss.png";
 
 const SCREEN_WIDTH = canvas.width;
 const SCREEN_HEIGHT = canvas.height;
@@ -919,13 +926,13 @@ class EliteBlueEnemy extends BaseEliteEnemy {
 
 class BossEnemy extends BaseEliteEnemy {
 	static config = {
-		width: 180,
-		height: 150,
+		width: 220, // ← 大きくする
+		height: 180, // ← 大きくする
 		speed: 1.0 * 60,
-		hp: 3000,
-		maxHp: 3000,
+		hp: 5000,
+		maxHp: 5000,
 		color: COLORS.DARK_GRAY,
-		x: (SCREEN_WIDTH - 180) / 2,
+		x: (SCREEN_WIDTH - 220) / 2, // ← widthと同じ値(220)に変更
 		onDefeat: (self) => {
 			endBossBattle();
 		},
@@ -1234,16 +1241,13 @@ class BossEnemy extends BaseEliteEnemy {
 
 	draw() {
 		if (this.isActive) {
-			ctx.fillStyle = this.color;
-			ctx.fillRect(this.x, this.y, this.width, this.height);
-
-			ctx.fillStyle = COLORS.YELLOW;
-			ctx.fillRect(
-				this.x + this.weakPoint.xOffset,
-				this.y + this.weakPoint.yOffset,
-				this.weakPoint.width,
-				this.weakPoint.height
-			);
+			// 画像が読み込まれていれば画像を描画、そうでなければ元の灰色の四角を描画
+			if (bossImageLoaded) {
+				ctx.drawImage(bossImage, this.x, this.y, this.width, this.height);
+			} else {
+				ctx.fillStyle = this.color;
+				ctx.fillRect(this.x, this.y, this.width, this.height);
+			}
 
 			const hpBarHeight = Math.max(2, Math.round(this.width * 0.1));
 			const hpBarWidth = this.width;
@@ -1622,7 +1626,7 @@ function update(deltaTime) {
 	if (player.homingLevel > 0 && currentTime - player.homingStartTime > player.homingDuration) player.homingLevel = 0;
 
 	if (player.beamCharges > 0 && currentTime - player.lastBeamTime > 1000) {
-		activeBeams.push(new Beam(player.x + player.width / 2 - player.width * 1.5, player.width * 3));
+		activeBeams.push(new Beam(player.x + player.width / 2 - 30, 60));
 		player.beamCharges--;
 		player.lastBeamTime = currentTime;
 	}
@@ -2173,7 +2177,7 @@ function update(deltaTime) {
 		const orb = healthOrbs[i];
 		if (checkCollision(playerRect, orb)) {
 			if (orb.healAmount <= 10) {
-				player.hp = Math.min(player.maxHp, player.hp + 10);
+				player.hp = Math.min(player.maxHp, player.hp + 2);
 			} else {
 				player.hp += orb.healAmount;
 			}
