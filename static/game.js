@@ -569,7 +569,7 @@ class ElitePurple extends BaseEliteEnemy {
 		const speed = 6 * 60 * this.difficulty.bulletSpeedMultiplier;
 		const turnSpeed = this.difficulty.homingTurnSpeed;
 		const damage = 20;
-		const spreadAngle = (20 * Math.PI) / 180;
+		const spreadAngle = (50 * Math.PI) / 180;
 		const lifetime = this.difficulty.homingLifetime;
 		const isInvulnerable = false; // ここに false を追加
 		for (let i = -2; i <= 2; i++) {
@@ -904,8 +904,8 @@ class BossEnemy extends BaseEliteEnemy {
 		width: 180,
 		height: 150,
 		speed: 1.0 * 60,
-		hp: 5000,
-		maxHp: 5000,
+		hp: 3000,
+		maxHp: 3000,
 		color: COLORS.DARK_GRAY,
 		x: (SCREEN_WIDTH - 180) / 2,
 		onDefeat: (self) => {
@@ -916,7 +916,7 @@ class BossEnemy extends BaseEliteEnemy {
 	constructor(difficulty) {
 		const bossConfig = { ...BossEnemy.config };
 		const level = difficulty.level || currentDifficultyLevel;
-		bossConfig.hp = bossConfig.hp + (level / 10 - 1) * 2500;
+		bossConfig.hp = bossConfig.hp + (level / 10 - 1) * 1000;
 		bossConfig.maxHp = bossConfig.hp;
 
 		super(bossConfig, difficulty);
@@ -1135,29 +1135,59 @@ class BossEnemy extends BaseEliteEnemy {
 	}
 
 	shootWalls() {
-		const startX = this.x + this.width / 2;
-		const startY = this.y + this.height;
-		const spreadAngle = (20 * Math.PI) / 180;
-		let numWalls = 5; // 基本の壁の数
+		let numRows = 4; // 壁を配置する行の数
+		let numCols = 6; // 壁を配置する列の数
+		let spawnChance = 0.5; // 各マスに壁が出現する確率 (0.5 = 50%)
 
-		// レベル10以上で強化
-		if (this.difficulty.level >= 10) {
-			numWalls = 7; // 壁の数を増やす
+		// --- 難易度による変化 ---
+		const level = this.difficulty.level;
+		if (level >= 15) {
+			numRows = 5;
+			numCols = 7;
+			spawnChance = 0.6; // 60%
 		}
-		// レベル20以上でさらに強化
-		if (this.difficulty.level >= 20) {
-			numWalls = 9; // さらに壁の数を増やす
+		if (level >= 25) {
+			numRows = 6;
+			numCols = 8;
+			spawnChance = 0.7; // 70%
 		}
+		// -------------------------
 
-		const startI = -Math.floor(numWalls / 2);
-		const endI = Math.ceil(numWalls / 2) - 1; // 壁の数を調整するためのループ範囲
+		const wallWidth = 120; // ObstacleBulletクラスで定義されている壁の幅
+		const cellWidth = SCREEN_WIDTH / numCols;
+		// 壁が出現し始めるY座標（ボスの少し下）
+		const spawnY = this.y + this.height + 50;
 
-		for (let i = startI; i <= endI; i++) {
-			const angle = Math.PI / 2 + i * spreadAngle;
-			this.bullets.push(new ObstacleBullet(startX, startY, angle, this.difficulty.wallHp * 2, false));
+		// 各行を少し遅らせて出現させ、波のように見せる
+		for (let r = 0; r < numRows; r++) {
+			const rowDelay = r * 400; // 1行あたり0.4秒の遅延
+			setTimeout(() => {
+				// 遅延中にボスが倒された場合は何もしない
+				if (!this.isActive) return;
+
+				// 1行分の壁を生成
+				for (let c = 0; c < numCols; c++) {
+					// spawnChanceの確率で壁を生成
+					if (Math.random() < spawnChance) {
+						// 壁のX座標を計算（セルの中心に配置）
+						const spawnX = c * cellWidth + (cellWidth - wallWidth) / 2;
+						// 角度は常に真下
+						const angle = Math.PI / 2;
+
+						this.bullets.push(
+							new ObstacleBullet(
+								spawnX,
+								spawnY, // Y座標は全行で同じ高さからスタート
+								angle,
+								this.difficulty.wallHp * 2,
+								false // HPオーブはドロップしない
+							)
+						);
+					}
+				}
+			}, rowDelay);
 		}
 	}
-
 	takeDamage(bullet) {
 		const weakPointRect = {
 			x: this.x + this.weakPoint.xOffset,
@@ -1374,19 +1404,19 @@ function updateDifficultySettings(level) {
 		attackRateMultiplier: 1.0,
 		elites: { purple: false, pink: false, orange: false, green: false, blue: false },
 		wallHp: 100,
-		homingLifetime: 2000,
+		homingLifetime: 4000,
 		homingTurnSpeed: 1.5,
 		eliteSlotInterval: 3000,
 		attackCooldownReduction: 0,
 	};
 
 	if (level >= 6) {
-		settings.hpMultiplier = 1.0 + (level - 5) * 0.01;
+		settings.hpMultiplier = 1.0 + (level - 5) * 0.04;
 		settings.speedMultiplier = 1.0 + (level - 5) * 0.001;
 		settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.001;
 		settings.attackRateMultiplier = 1.0 + (level - 5) * 0.001;
 		settings.wallHp = 100 + (level - 5) * 2;
-		settings.homingLifetime = 3000 + (level - 5) * 0.001;
+		settings.homingLifetime = 4000 + (level - 5) * 1.0;
 	}
 	if (level >= 1) settings.elites.purple = true;
 	if (level >= 2) settings.elites.pink = true;
