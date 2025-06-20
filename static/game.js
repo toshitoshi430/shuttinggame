@@ -9,6 +9,12 @@ playerImage.onload = function () {
 };
 playerImage.src = "/static/Rocket.png";
 
+const gameOverSound = new Audio("/static/GAMEOVER.mp3"); // ファイル名はご自身のものに合わせてください
+gameOverSound.volume = 0.5;
+
+const levelUpSound = new Audio("/static/LevelUp.mp3"); // ファイル名はご自身のものに合わせてください
+levelUpSound.volume = 0.5;
+
 //被ダメージ音
 const damageSound = new Audio("/static/damage.mp3"); // ファイル名はご自身のものに合わせてください
 damageSound.volume = 0.5; // 音量を50%に設定（0.0から1.0の間で調整可能）
@@ -1493,6 +1499,7 @@ function startBossBattle() {
 
 	currentBoss = new BossEnemy(difficultySettings);
 	difficultyUpAnimation = { active: true, startTime: performance.now(), text: "WARNING!!", duration: 3000 };
+	levelUpSound.play();
 	lastShotTime = performance.now(); // ここを追加
 }
 
@@ -1592,6 +1599,7 @@ function update(deltaTime) {
 			startBossBattle();
 		} else {
 			difficultyUpAnimation = { active: true, startTime: currentTime, text: "LEVEL UP!!", duration: 2000 };
+			levelUpSound.play();
 		}
 	}
 
@@ -2294,6 +2302,7 @@ function update(deltaTime) {
 
 	if (player.hp <= 0) {
 		gameOver = true;
+		gameOverSound.play();
 	}
 }
 
