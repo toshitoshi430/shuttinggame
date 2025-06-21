@@ -20,14 +20,14 @@ bossImage.src = "/static/textures/boss.png";
 const gameOverSound = new Audio("/static/sounds/GAMEOVER.mp3");
 gameOverSound.volume = 0.5;
 
-const shootSoundPool = [];
-const shootSoundPoolSize = 5;
-for (let i = 0; i < shootSoundPoolSize; i++) {
-  const sound = new Audio("/static/sounds/shoot.mp3");
-  sound.volume = 0.05;
-  shootSoundPool.push(sound);
-}
-let currentShootSoundIndex = 0;
+//const shootSoundPool = [];
+//const shootSoundPoolSize = 5;
+//for (let i = 0; i < shootSoundPoolSize; i++) {
+//  const sound = new Audio("/static/sounds/shoot.mp3");
+//  sound.volume = 0.05;
+//  shootSoundPool.push(sound);
+//}
+//let currentShootSoundIndex = 0;
 
 const levelUpSound = new Audio("/static/sounds/LevelUp.mp3");
 levelUpSound.volume = 0.2;
