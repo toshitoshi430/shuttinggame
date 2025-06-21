@@ -17,28 +17,28 @@ bossImage.onload = function () {
 };
 bossImage.src = "/static/textures/boss.png";
 
-const gameOverSound = new Audio("/static/sounds/GAMEOVER.mp3");
+const gameOverSound = new Audio("/static/sounds/GAMEOVER.ogg");
 gameOverSound.volume = 0.5;
 
 const shootSoundPool = [];
 const shootSoundPoolSize = 5;
 for (let i = 0; i < shootSoundPoolSize; i++) {
-  const sound = new Audio("/static/sounds/shoot.mp3");
+  const sound = new Audio("/static/sounds/shoot.ogg");
   sound.volume = 0.05;
   shootSoundPool.push(sound);
 }
 let currentShootSoundIndex = 0;
 
-const levelUpSound = new Audio("/static/sounds/LevelUp.mp3");
+const levelUpSound = new Audio("/static/sounds/LevelUp.ogg");
 levelUpSound.volume = 0.2;
 
-const warningSound = new Audio("/static/sounds/warning.mp3");
+const warningSound = new Audio("/static/sounds/warning.ogg");
 warningSound.volume = 0.6;
 
-const damageSound = new Audio("/static/sounds/damage.mp3");
+const damageSound = new Audio("/static/sounds/damage.ogg");
 damageSound.volume = 0.5;
 
-const buffSound = new Audio("/static/sounds/buff.mp3");
+const buffSound = new Audio("/static/sounds/buff.ogg");
 buffSound.volume = 0.4;
 
 const SCREEN_WIDTH = canvas.width;
