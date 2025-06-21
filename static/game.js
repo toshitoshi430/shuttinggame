@@ -7,26 +7,39 @@ let playerImageLoaded = false;
 playerImage.onload = function () {
   playerImageLoaded = true;
 };
-playerImage.src = "/static/Rocket.png";
+playerImage.src = "/static/textures/Rocket.png";
 
-const gameOverSound = new Audio("/static/GAMEOVER.mp3"); // ファイル名はご自身のものに合わせてください
-gameOverSound.volume = 0.5;
-
-const levelUpSound = new Audio("/static/LevelUp.mp3"); // ファイル名はご自身のものに合わせてください
-levelUpSound.volume = 0.5;
-
-//被ダメージ音
-const damageSound = new Audio("/static/damage.mp3"); // ファイル名はご自身のものに合わせてください
-damageSound.volume = 0.5; // 音量を50%に設定（0.0から1.0の間で調整可能）
-
-// ボス画像
 const bossImage = new Image();
 let bossImageLoaded = false;
 
 bossImage.onload = function () {
   bossImageLoaded = true;
 };
-bossImage.src = "/static/boss.png";
+bossImage.src = "/static/textures/boss.png";
+
+const gameOverSound = new Audio("/static/sounds/GAMEOVER.mp3");
+gameOverSound.volume = 0.5;
+
+const shootSoundPool = [];
+const shootSoundPoolSize = 5;
+for (let i = 0; i < shootSoundPoolSize; i++) {
+  const sound = new Audio("/static/sounds/shoot.mp3");
+  sound.volume = 0.05;
+  shootSoundPool.push(sound);
+}
+let currentShootSoundIndex = 0;
+
+const levelUpSound = new Audio("/static/sounds/LevelUp.mp3");
+levelUpSound.volume = 0.2;
+
+const warningSound = new Audio("/static/sounds/warning.mp3");
+warningSound.volume = 0.6;
+
+const damageSound = new Audio("/static/sounds/damage.mp3");
+damageSound.volume = 0.5;
+
+const buffSound = new Audio("/static/sounds/buff.mp3");
+buffSound.volume = 0.4;
 
 const SCREEN_WIDTH = canvas.width;
 const SCREEN_HEIGHT = canvas.height;
@@ -502,9 +515,16 @@ class EnemyLaser {
       const alpha = 0.8 * Math.abs(Math.sin((elapsed / 200) * Math.PI));
       ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
       ctx.lineWidth = 3;
+
+      // ★★★ ここからが変更点 ★★★
+      // ビームと同じ長さの線の終点を計算する
+      const endX = source.x + this.beamLength * Math.cos(this.angle);
+      const endY = source.y + this.beamLength * Math.sin(this.angle);
+
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
-      ctx.lineTo(this.target.x, this.target.y);
+      // 計算した終点まで線を引く
+      ctx.lineTo(endX, endY);
       ctx.stroke();
     } else {
       const elapsed = currentTime - this.beamFireTime;
@@ -1097,7 +1117,7 @@ class BossEnemy extends BaseEliteEnemy {
     let speed = 7 * 60 * this.difficulty.bulletSpeedMultiplier;
     let lifetime = this.difficulty.homingLifetime;
     let numHomingBullets = 10; // 基本の弾数
-    const isInvulnerable = true;
+    const isInvulnerable = false;
 
     // レベル10以上で強化
     if (this.difficulty.level >= 10) {
@@ -1448,7 +1468,7 @@ function updateDifficultySettings(level) {
     settings.bulletSpeedMultiplier = 1.0 + (level - 5) * 0.001;
     settings.attackRateMultiplier = 1.0 + (level - 5) * 0.001;
     settings.wallHp = 100 + (level - 5) * 2;
-    settings.homingLifetime = 4000 + (level - 5) * 1.0;
+    settings.homingLifetime = 3000 + (level - 5) * 0.01;
   }
   if (level >= 1) settings.elites.purple = true;
   if (level >= 2) settings.elites.pink = true;
@@ -1499,7 +1519,7 @@ function startBossBattle() {
 
   currentBoss = new BossEnemy(difficultySettings);
   difficultyUpAnimation = { active: true, startTime: performance.now(), text: "WARNING!!", duration: 3000 };
-  levelUpSound.play();
+  warningSound.play();
   lastShotTime = performance.now(); // ここを追加
 }
 
@@ -1661,6 +1681,14 @@ function update(deltaTime) {
 
   const cooldown = bulletSettings.cooldown / rateMultiplier;
   if (currentTime - lastShotTime > cooldown) {
+    // ★★★ プールから順番にサウンドを取り出して再生 ★★★
+    const soundToPlay = shootSoundPool[currentShootSoundIndex];
+    soundToPlay.currentTime = 0;
+    soundToPlay.play();
+
+    // 次に再生するサウンドのインデックスを更新する
+    currentShootSoundIndex = (currentShootSoundIndex + 1) % shootSoundPoolSize;
+
     const bulletXCenter = player.x + player.width / 2;
     const bulletYBase = player.y;
 
@@ -1909,14 +1937,20 @@ function update(deltaTime) {
     if (currentBoss) {
       for (let k = currentBoss.bullets.length - 1; k >= 0; k--) {
         const bossBullet = currentBoss.bullets[k];
-        // 変更点: ボスの弾が ObstacleBullet (壁) の場合のみ衝突判定を行う
-        if (bossBullet instanceof ObstacleBullet && checkCollision(bullet, bossBullet)) {
+
+        // ★★★ 条件を変更 ★★★
+        // ボスの弾が「壁」または「追尾弾」の場合に当たり判定をチェックする
+        if (
+          (bossBullet instanceof ObstacleBullet || bossBullet instanceof HomingBullet) &&
+          checkCollision(bullet, bossBullet)
+        ) {
+          // takeDamageメソッドでダメージを与え、破壊されたらtrueが返る
           if (bossBullet.takeDamage(bullet)) {
-            currentBoss.bullets.splice(k, 1); // ボスの弾（壁）を削除
+            currentBoss.bullets.splice(k, 1); // ボスの弾を削除
           }
           bullets.splice(i, 1); // プレイヤーの弾を削除
           bulletRemoved = true;
-          break; // このプレイヤー弾に対するボスの弾のチェックを終了
+          break;
         }
       }
     }
@@ -2201,6 +2235,8 @@ function update(deltaTime) {
   for (let i = buffOrbs.length - 1; i >= 0; i--) {
     const orb = buffOrbs[i];
     if (checkCollision(playerRect, orb)) {
+      buffSound.currentTime = 0;
+      buffSound.play();
       if (orb instanceof RewardOrb) {
         // HP全回復と攻撃力ボーナス
         player.hp = player.maxHp;
@@ -2296,8 +2332,10 @@ function update(deltaTime) {
   if (currentElitePink && !currentElitePink.isActive && currentElitePink.bullets.length === 0) currentElitePink = null;
   if (currentEliteGreenEnemy && !currentEliteGreenEnemy.isActive && currentEliteGreenEnemy.bullets.length === 0)
     currentEliteGreenEnemy = null;
-  if (currentEliteBlueEnemy && !currentEliteBlueEnemy.isActive && currentEliteBlueEnemy.activeLasers.length === 0)
-    currentEliteBlueEnemy = null;
+  if (currentEliteBlueEnemy && !currentEliteBlueEnemy.isActive) {
+    currentEliteBlueEnemy.activeLasers = []; // ★アクティブなレーザーを即時消去
+    currentEliteBlueEnemy = null; // ★本体も即時消去
+  }
   if (currentBoss && !currentBoss.isActive && currentBoss.bullets.length === 0) currentBoss = null;
 
   if (player.hp <= 0) {
