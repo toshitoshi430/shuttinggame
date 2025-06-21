@@ -20,14 +20,14 @@ bossImage.src = "/static/textures/boss.png";
 const gameOverSound = new Audio("/static/sounds/GAMEOVER.mp3");
 gameOverSound.volume = 0.5;
 
-//const shootSoundPool = [];
-//const shootSoundPoolSize = 5;
-//for (let i = 0; i < shootSoundPoolSize; i++) {
-//  const sound = new Audio("/static/sounds/shoot.mp3");
-//  sound.volume = 0.05;
-//  shootSoundPool.push(sound);
-//}
-//let currentShootSoundIndex = 0;
+const shootSoundPool = [];
+const shootSoundPoolSize = 5;
+for (let i = 0; i < shootSoundPoolSize; i++) {
+  const sound = new Audio("/static/sounds/shoot.mp3");
+  sound.volume = 0.05;
+  shootSoundPool.push(sound);
+}
+let currentShootSoundIndex = 0;
 
 const levelUpSound = new Audio("/static/sounds/LevelUp.mp3");
 levelUpSound.volume = 0.2;
@@ -1681,13 +1681,13 @@ function update(deltaTime) {
 
   const cooldown = bulletSettings.cooldown / rateMultiplier;
   if (currentTime - lastShotTime > cooldown) {
-    // ★★★ プールから順番にサウンドを取り出して再生 ★★★
-    const soundToPlay = shootSoundPool[currentShootSoundIndex];
-    soundToPlay.currentTime = 0;
-    soundToPlay.play();
+    // // ★★★ プールから順番にサウンドを取り出して再生 ★★★
+    // const soundToPlay = shootSoundPool[currentShootSoundIndex];
+    // soundToPlay.currentTime = 0;
+    // soundToPlay.play();
 
-    // 次に再生するサウンドのインデックスを更新する
-    currentShootSoundIndex = (currentShootSoundIndex + 1) % shootSoundPoolSize;
+    // // 次に再生するサウンドのインデックスを更新する
+    // currentShootSoundIndex = (currentShootSoundIndex + 1) % shootSoundPoolSize;
 
     const bulletXCenter = player.x + player.width / 2;
     const bulletYBase = player.y;
